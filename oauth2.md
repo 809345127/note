@@ -6,24 +6,24 @@
 
 首先，我们要明确一点：**OAuth 2.0 是一个授权（Authorization）框架，而不是一个认证（Authentication）协议。**
 
-- **认证 (Authentication)**：是验证“你是谁”的过程（例如，通过用户名和密码登录）。
-- **授权 (Authorization)**：是验证“你有什么权限”的过程（例如，允许某个应用读取你的微信步数，但不能发朋友圈）。
+- **认证 (Authentication)**：是验证"你是谁"的过程（例如，通过用户名和密码登录）。
+- **授权 (Authorization)**：是验证"你有什么权限"的过程（例如，允许某个应用读取你的微信步数，但不能发朋友圈）。
 
-简单来说，OAuth 2.0 解决的核心问题是 **“委托授权”**。
+简单来说，OAuth 2.0 解决的核心问题是 **"委托授权"**。
 
-想象一个场景：有一个第三方的照片打印服务（我们称之为“云打印”），你希望它能访问并打印你在“百度网盘”里存储的照片。如果没有 OAuth 2.0，你可能会怎么做？
+想象一个场景：有一个第三方的照片打印服务（我们称之为"云打印"），你希望它能访问并打印你在"百度网盘"里存储的照片。如果没有 OAuth 2.0，你可能会怎么做？
 
-最直接但最不安全的方法是：把你的百度网盘账号和密码告诉“云打印”服务。
+最直接但最不安全的方法是：把你的百度网盘账号和密码告诉"云打印"服务。
 
 这样做会带来巨大的风险：
-1.  **安全风险**：“云打印”服务拿到了你的完整权限，它不仅可以读取你的照片，还可以删除你的文件、查看你的私密文档等等。
-2.  **密码泄露**：“云打印”服务需要安全地存储你的密码，如果它的数据库被黑客攻击，你的百度网盘密码就会泄露。
-3.  **权限无法控制**：你无法限制“云打印”只能读取照片，也无法控制授权的有效期。
+1.  **安全风险**："云打印"服务拿到了你的完整权限，它不仅可以读取你的照片，还可以删除你的文件、查看你的私密文档等等。
+2.  **密码泄露**："云打印"服务需要安全地存储你的密码，如果它的数据库被黑客攻击，你的百度网盘密码就会泄露。
+3.  **权限无法控制**：你无法限制"云打印"只能读取照片，也无法控制授权的有效期。
 4.  **撤销授权困难**：一旦你把密码给了它，想撤销授权只能去修改你的百度网盘密码，这会导致所有依赖该密码的服务全部失效。
 
 **OAuth 2.0 的出现就是为了优雅地解决这个问题。**
 
-通过 OAuth 2.0，你可以授权“云打印”服务直接从“百度网盘”获取你的照片，而完全不需要将你的百度网盘密码告诉“云打印”。你只是在百度网盘的授权页面上点击“同意”，百度网盘就会生成一个临时的、有特定权限（比如“只读照片”）的“令牌”（Token）给“云打印”。“云打印”就用这个令牌去获取你的照片。
+通过 OAuth 2.0，你可以授权"云打印"服务直接从"百度网盘"获取你的照片，而完全不需要将你的百度网盘密码告诉"云打印"。你只是在百度网盘的授权页面上点击"同意"，百度网盘就会生成一个临时的、有特定权限（比如"只读照片"）的"令牌"（Token）给"云打印"。"云打印"就用这个令牌去获取你的照片。
 
 这个过程就像你去住酒店：
 - 你（**用户**）在前台出示身份证（**认证**）。
@@ -40,7 +40,7 @@
     -   是能够授权访问受保护资源（例如你的照片、联系人列表）的实体。
 
 2.  **客户端 (Client)**
-    -   指希望访问用户资源的**第三方应用程序**，例如我们之前提到的“云打印”服务。
+    -   指希望访问用户资源的**第三方应用程序**，例如我们之前提到的"云打印"服务。
     -   客户端必须在授权服务器上进行注册，并获得一个唯一的客户端 ID（`client_id`）和客户端密钥（`client_secret`）。
 
 3.  **授权服务器 (Authorization Server)**
@@ -61,7 +61,7 @@
 
 ### 1. 细化整体流程图（开发落地视角）
 
-> **整个流程的起点是用户在第三方应用页面主动点击“使用百度账号登录/授权”按钮。**
+> **整个流程的起点是用户在第三方应用页面主动点击"使用百度账号登录/授权"按钮。**
 
 ```mermaid
 sequenceDiagram
@@ -72,39 +72,40 @@ sequenceDiagram
 
     rect rgb(230, 245, 255)
     note over Client: 阶段一：准备并请求授权
-    User->>Client: 1. 用户在第三方应用页面主动点击“使用百度账号登录/授权”按钮，发起流程
-    Client->>Client: 2. 生成 code_verifier（高强度随机字符串，存入 session）
-    Client->>Client: 3. 生成 state（高强度随机字符串，存入 session，防 CSRF）
-    Client->>Client: 4. 计算 code_challenge = BASE64URL(SHA256(code_verifier))
+    User->>Client: 1. 用户在第三方应用页面主动点击<br/>"使用百度账号登录/授权"按钮，<br/>发起流程
+    Client->>Client: 2. 生成 code_verifier<br/>（高强度随机字符串，存入 session）
+    Client->>Client: 3. 生成 state<br/>（高强度随机字符串，存入 session，防 CSRF）
+    Client->>Client: 4. 计算 code_challenge =<br/>BASE64URL(SHA256(code_verifier))
     Client->>User: 5. 浏览器重定向到授权服务器
-    Note right of User: GET https://auth.example.com/authorize?response_type=code&client_id=xxx&redirect_uri=https://client.example.com/callback&scope=read_photos&state=xxx&code_challenge=xxx&code_challenge_method=S256
+    Note right of User: GET https://auth.example.com/authorize?<br/>response_type=code&client_id=xxx&<br/>redirect_uri=https://client.example.com/callback&<br/>scope=read_photos&state=xxx&<br/>code_challenge=xxx&code_challenge_method=S256
+    AuthServer->>DB: 5.1 查询数据库校验 client_id 是否合法
     alt client_id/redirect_uri非法
-        AuthServer->>User: 返回错误页面（如 400，invalid_client/invalid_redirect_uri）
+        AuthServer->>User: 返回错误页面<br/>（如 400，invalid_client/invalid_redirect_uri）
     end
     end
 
     rect rgb(255, 255, 224)
     note over User, AuthServer: 阶段二：用户授权并获取授权码
     User->>AuthServer: 6.1 未登录时，访问登录页
-    Note right of AuthServer: GET https://auth.example.com/login?return_to=%2Fauthorize%3Fresponse_type%3Dcode%26client_id%3Dxxx%26redirect_uri%3Dhttps%253A%252F%252Fclient.example.com%252Fcallback%26scope%3Dread_photos%26state%3Dxxx%26code_challenge%3Dxxx%26code_challenge_method%3DS256
+    Note right of AuthServer: GET https://auth.example.com/login?<br/>return_to=%2Fauthorize%3Fresponse_type%3Dcode<br/>%26client_id%3Dxxx%26redirect_uri%3Dhttps<br/>%253A%252F%252Fclient.example.com<br/>%252Fcallback%26scope%3Dread_photos<br/>%26state%3Dxxx%26code_challenge%3Dxxx<br/>%26code_challenge_method%3DS256
     User->>AuthServer: 6.2 提交账号密码，登录
     Note right of AuthServer: POST https://auth.example.com/login
     alt 登录失败
         AuthServer->>User: 返回登录页面，提示错误
     else 登录成功
         AuthServer->>DB: 6.3 校验账号密码，登录成功后建立会话
-        User->>AuthServer: 6.4 展示授权确认页（显示应用名、scope、开发者信息等）
-        Note right of AuthServer: GET https://auth.example.com/authorize?response_type=code&client_id=xxx&redirect_uri=https://client.example.com/callback&scope=read_photos&state=xxx&code_challenge=xxx&code_challenge_method=S256
-        User->>AuthServer: 6.5 用户点击“同意”或“拒绝”
+        User->>AuthServer: 6.4 展示授权确认页<br/>（显示应用名、scope、开发者信息等）
+        Note right of AuthServer: GET https://auth.example.com/authorize?<br/>response_type=code&client_id=xxx&<br/>redirect_uri=https://client.example.com/callback&<br/>scope=read_photos&state=xxx&<br/>code_challenge=xxx&code_challenge_method=S256
+        User->>AuthServer: 6.5 用户点击"同意"或"拒绝"
         Note right of AuthServer: POST https://auth.example.com/authorize
         alt 用户同意
-            AuthServer->>DB: 7. 校验 client_id、redirect_uri、scope（查 oauth_clients）
-            AuthServer->>DB: 8. 生成授权码 code，保存到 oauth_auth_codes
-            AuthServer->>User: 9. 302 重定向到 redirect_uri，带 code 和 state
-            Note right of User: GET https://client.example.com/callback?code=xxx&state=xxx
-            User->>Client: 10. 浏览器访问回调地址，code 传递给第三方应用
+            AuthServer->>DB: 7. 校验 client_id、redirect_uri、scope<br/>（查 oauth_clients）
+            AuthServer->>DB: 8. 生成授权码 code，<br/>保存到 oauth_auth_codes
+            AuthServer->>User: 9. 302 重定向到 redirect_uri，<br/>带 code 和 state
+            Note right of User: GET https://client.example.com/callback?<br/>code=xxx&state=xxx
+            User->>Client: 10. 浏览器访问回调地址，<br/>code 传递给第三方应用
         else 用户拒绝
-            AuthServer->>User: 返回错误或重定向到 https://client.example.com/callback?error=access_denied&state=xxx
+            AuthServer->>User: 返回错误或重定向到<br/>https://client.example.com/callback?<br/>error=access_denied&state=xxx
         end
     end
     end
@@ -116,10 +117,10 @@ sequenceDiagram
     alt code无效/已用/过期
         AuthServer->>Client: 返回 400，error=invalid_grant
     else 校验通过
-        AuthServer->>DB: 12. 查 oauth_auth_codes，校验 code、client_id、redirect_uri、未过期
-        AuthServer->>AuthServer: 13. 校验 code_challenge == BASE64URL(SHA256(code_verifier))
-        AuthServer->>DB: 14. 删除已用 code，生成 access_token、refresh_token，存入 oauth_access_tokens
-        AuthServer->>Client: 15. 返回 JSON { access_token, refresh_token, expires_in, token_type, scope }
+        AuthServer->>DB: 12. 查 oauth_auth_codes，<br/>校验 code、client_id、redirect_uri、未过期
+        AuthServer->>AuthServer: 13. 校验 code_challenge ==<br/>BASE64URL(SHA256(code_verifier))
+        AuthServer->>DB: 14. 删除已用 code，<br/>生成 access_token、refresh_token，<br/>存入 oauth_access_tokens
+        AuthServer->>Client: 15. 返回 JSON<br/>{ access_token, refresh_token, expires_in, token_type, scope }
     end
     end
 
@@ -128,9 +129,9 @@ sequenceDiagram
     Client->>ResourceServer: 16. GET https://api.example.com/photo-list
     Note right of ResourceServer: Header: Authorization: Bearer access_token
     alt token无效/过期
-        ResourceServer->>Client: 返回 401 Unauthorized，body: {"error": "invalid_token"}
+        ResourceServer->>Client: 返回 401 Unauthorized，<br/>body: {"error": "invalid_token"}
     else 校验通过
-        ResourceServer->>DB: 17. 校验 access_token（查 oauth_access_tokens，校验有效期、scope）
+        ResourceServer->>DB: 17. 校验 access_token<br/>（查 oauth_access_tokens，校验有效期、scope）
         ResourceServer->>Client: 18. 返回资源数据
     end
     end
@@ -155,7 +156,11 @@ sequenceDiagram
   - 典型错误：
     ```json
     { "error": "invalid_client", "error_description": "client_id 不存在" }
+    ```
+    ```json
     { "error": "invalid_redirect_uri" }
+    ```
+    ```json
     { "error": "invalid_scope" }
     ```
   - 安全建议：强制校验 state，防止 CSRF
@@ -277,7 +282,7 @@ sequenceDiagram
     participant AuthServer as 授权服务器
 
     Client->>+AuthServer: 1. 使用客户端凭证申请令牌<br/>- grant_type=client_credentials<br/>- client_id<br/>- client_secret
-    AuthServer-->>-Client: 2. 验证通过，发放代表客户端的Access Token
+    AuthServer-->>-Client: 2. 验证通过，发放代表客户端的<br/>Access Token
 ```
 
 ## 总结

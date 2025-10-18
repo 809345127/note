@@ -92,7 +92,7 @@ func NewBlock(index int, transactions []Transaction, previousHash string, bits u
 
 // calculateHash 计算区块哈希(SHA256)
 func (b *Block) calculateHash() string {
-	record := fmt.Sprintf("%d%s%s%s%s%d",
+	record := fmt.Sprintf("%d%s%s%s%d%d",
 		b.Header.Index,
 		b.Header.Timestamp.String(),
 		b.Header.PreviousHash,
@@ -108,7 +108,7 @@ func (b *Block) calculateHash() string {
 // MineBlock 工作量证明(PoW)
 func (b *Block) MineBlock() {
 	target := bitsToTarget(b.Header.Bits)
-	
+
 	for !isHashValidTarget(b.Header.Hash, target) {
 		b.Header.Nonce++
 		b.Header.Hash = b.calculateHash()

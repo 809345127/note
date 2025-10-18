@@ -7,15 +7,22 @@ import (
 
 // Blockchain 区块链结构
 type Blockchain struct {
-	Blocks   []*Block
-	UTXOSet  UTXOSet // 添加UTXO集合
+	Blocks            []*Block
+	UTXOSet           UTXOSet     // 添加UTXO集合
+	AdjustmentInterval int         // 难度调整间隔（区块数）
+	TargetTimespan     int         // 期望时间范围（秒）
+	MaxAdjustment      float64     // 最大调整比例
 }
 
 // AddBlock 添加区块到链
 func (bc *Blockchain) AddBlock(transactions []Transaction) {
 	prevBlock := bc.Blocks[len(bc.Blocks)-1]
-	newBlock := NewBlock(prevBlock.Header.Index+1, transactions, prevBlock.Header.Hash)
-	newBlock.MineBlock(2) // 难度设置为2
+	
+	// 获取当前难度目标
+	bits := bc.GetCurrentBits()
+	
+	newBlock := NewBlock(prevBlock.Header.Index+1, transactions, prevBlock.Header.Hash, bits)
+	newBlock.MineBlock()
 	bc.Blocks = append(bc.Blocks, newBlock)
 	
 	// 更新UTXO集合
@@ -119,5 +126,65 @@ func CreateGenesisBlock() *Block {
 		Timestamp: time.Now(),
 	}
 
-	return NewBlock(0, []Transaction{genesisTx}, "")
+	// 创世区块的初始难度
+	genesisBits := uint32(0x1d00ffff) // 比特币创世区块的实际难度值
+	
+	// 降低难度以便快速演示
+	genesisBits = uint32(0x03123456) // 较低的难度值
+	
+	return NewBlock(0, []Transaction{genesisTx}, "", genesisBits)
+}
+
+// GetCurrentBits 获取当前网络的难度目标
+func (bc *Blockchain) GetCurrentBits() uint32 {
+	if len(bc.Blocks) == 0 {
+		// 如果没有区块，返回创世区块难度
+		return uint32(0x03123456) // 使用较低的难度值
+	}
+	
+	// 检查是否需要调整难度
+	if len(bc.Blocks)%bc.AdjustmentInterval == 0 {
+		return bc.CalculateNewDifficulty()
+	}
+	
+	// 否则返回与上一个区块相同的难度
+	return bc.Blocks[len(bc.Blocks)-1].Header.Bits
+}
+
+// CalculateNewDifficulty 计算新的难度值
+func (bc *Blockchain) CalculateNewDifficulty() uint32 {
+	if len(bc.Blocks) < bc.AdjustmentInterval {
+		return uint32(0x03123456) // 默认难度
+	}
+	
+	// 获取调整周期的第一个和最后一个区块
+	firstBlock := bc.Blocks[len(bc.Blocks)-bc.AdjustmentInterval]
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+	
+	// 计算实际花费时间
+	actualTimespan := lastBlock.Header.Timestamp.Unix() - firstBlock.Header.Timestamp.Unix()
+	
+	// 限制调整幅度
+	maxTimespan := int64(float64(bc.TargetTimespan) * bc.MaxAdjustment)
+	minTimespan := int64(float64(bc.TargetTimespan) / bc.MaxAdjustment)
+	
+	if actualTimespan < minTimespan {
+		actualTimespan = minTimespan
+	} else if actualTimespan > maxTimespan {
+		actualTimespan = maxTimespan
+	}
+	
+	// 计算新难度（简化版）
+	oldDifficulty := float64(firstBlock.Header.Bits)
+	newDifficulty := oldDifficulty * (float64(bc.TargetTimespan) / float64(actualTimespan))
+	
+	// 限制难度值范围，确保不会太高
+	if newDifficulty > 0x1d00ffff {
+		newDifficulty = 0x1d00ffff
+	}
+	if newDifficulty < 0x03123456 {
+		newDifficulty = 0x03123456
+	}
+	
+	return uint32(newDifficulty)
 }

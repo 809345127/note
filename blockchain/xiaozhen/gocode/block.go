@@ -15,6 +15,7 @@ type BlockHeader struct {
 	Hash         string    // 当前区块的哈希
 	Nonce        int       // 随机数(用于PoW)
 	MerkleRoot   string    // Merkle Tree 根哈希
+	Bits         uint32    // 难度目标的紧凑表示
 }
 
 // BlockBody 定义区块体结构
@@ -69,13 +70,14 @@ func buildMerkleTree(leaves []string) string {
 }
 
 // NewBlock 创建新区块
-func NewBlock(index int, transactions []Transaction, previousHash string) *Block {
+func NewBlock(index int, transactions []Transaction, previousHash string, bits uint32) *Block {
 	block := &Block{
 		Header: BlockHeader{
 			Index:        index,
 			Timestamp:    time.Now(),
 			PreviousHash: previousHash,
 			Nonce:        0,
+			Bits:         bits, // 添加难度目标
 		},
 		Body: BlockBody{
 			Transactions: transactions,
@@ -104,15 +106,37 @@ func (b *Block) calculateHash() string {
 }
 
 // MineBlock 工作量证明(PoW)
-func (b *Block) MineBlock(difficulty int) {
-	for !isHashValid(b.Header.Hash, difficulty) {
+func (b *Block) MineBlock() {
+	target := bitsToTarget(b.Header.Bits)
+	
+	for !isHashValidTarget(b.Header.Hash, target) {
 		b.Header.Nonce++
 		b.Header.Hash = b.calculateHash()
 	}
 	fmt.Printf("区块挖矿成功: %s\n", b.Header.Hash)
 }
 
-// isHashValid 验证哈希是否满足难度要求
+// bitsToTarget 将Bits字段转换为256位目标值
+func bitsToTarget(bits uint32) string {
+	// 简化版：实际比特币实现更复杂
+	// 这里使用前导零数量作为难度表示
+	difficulty := bits >> 24 // 取高8位作为难度
+	target := ""
+	for i := 0; i < int(difficulty); i++ {
+		target += "0"
+	}
+	for i := int(difficulty); i < 64; i++ {
+		target += "f"
+	}
+	return target
+}
+
+// isHashValidTarget 验证哈希是否满足目标值要求
+func isHashValidTarget(hash string, target string) bool {
+	return hash <= target
+}
+
+// isHashValid 验证哈希是否满足难度要求（保留原函数以兼容）
 func isHashValid(hash string, difficulty int) bool {
 	prefix := ""
 	for i := 0; i < difficulty; i++ {

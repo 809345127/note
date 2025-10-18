@@ -29,7 +29,7 @@ type TxOutput struct {
 	PubKeyHash string // 接收方公钥哈希（地址）
 }
 
-// calculateTransactionHash 计算交易哈希
+// calculateHash 计算交易哈希
 func (tx *Transaction) calculateHash() string {
 	// 使用交易的实际内容计算哈希，避免循环依赖
 	inputsData := ""
@@ -47,6 +47,11 @@ func (tx *Transaction) calculateHash() string {
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
 	return hex.EncodeToString(hashed)
+}
+
+// calculateTransactionHash 计算交易哈希（保留原函数名以兼容）
+func (tx *Transaction) calculateTransactionHash() string {
+	return tx.calculateHash()
 }
 
 // VerifyTransaction 验证交易

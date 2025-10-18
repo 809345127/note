@@ -4,7 +4,12 @@ import "fmt"
 
 func main() {
 	// 初始化区块链
-	bc := Blockchain{}
+	bc := Blockchain{
+		AdjustmentInterval: 2016, // 每2016个区块调整一次难度
+		TargetTimespan:     2016 * 600, // 期望时间范围：2016个区块 * 10分钟
+		MaxAdjustment:      4.0, // 最大调整比例：4倍
+	}
+	
 	genesisBlock := CreateGenesisBlock()
 	bc.Blocks = append(bc.Blocks, genesisBlock)
 
@@ -106,7 +111,21 @@ func main() {
 		} else {
 			fmt.Printf("区块 #%d 的哈希链接验证通过\n", currentBlock.Header.Index)
 		}
+		
+		// 验证工作量证明
+		target := bitsToTarget(currentBlock.Header.Bits)
+		if isHashValidTarget(currentBlock.Header.Hash, target) {
+			fmt.Printf("区块 #%d 的工作量证明验证通过\n", currentBlock.Header.Index)
+		} else {
+			fmt.Printf("错误: 区块 #%d 的工作量证明验证失败\n", currentBlock.Header.Index)
+		}
 	}
+	
+	// 显示当前网络难度
+	fmt.Println("\n=== 网络难度信息 ===")
+	currentBits := bc.GetCurrentBits()
+	fmt.Printf("当前难度Bits值: 0x%x\n", currentBits)
+	fmt.Printf("当前难度目标: %s\n", bitsToTarget(currentBits))
 	
 	// 展示UTXO集合
 	fmt.Println("\n=== UTXO集合 ===")

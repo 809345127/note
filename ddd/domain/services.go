@@ -1,13 +1,43 @@
+/*
+领域服务（Domain Service）
+
+领域服务用于处理不适合放在单个实体中的业务逻辑，通常是：
+1. 跨多个聚合根的业务规则验证
+2. 需要访问多个仓储的复杂业务计算
+3. 无状态的业务规则
+
+与应用服务的区别：
+┌─────────────────────────────────────────────────────────────────┐
+│ 领域服务 (Domain Service)                                        │
+│ - 位于领域层                                                     │
+│ - 处理跨实体的业务规则                                            │
+│ - 不负责持久化（不调用Save）                                       │
+│ - 不负责事务管理                                                  │
+│ - 不发布事件                                                     │
+├─────────────────────────────────────────────────────────────────┤
+│ 应用服务 (Application Service)                                   │
+│ - 位于应用层                                                     │
+│ - 编排业务流程                                                   │
+│ - 调用领域服务进行验证                                            │
+│ - 负责调用Save持久化                                              │
+│ - 管理事务边界                                                   │
+└─────────────────────────────────────────────────────────────────┘
+*/
 package domain
 
 import (
+	"context"
 	"errors"
 )
 
 var (
-	ErrUserNotFound = errors.New("user not found")
+	ErrUserNotFound  = errors.New("user not found")
 	ErrOrderNotFound = errors.New("order not found")
 )
+
+// ============================================================================
+// 用户领域服务
+// ============================================================================
 
 // UserDomainService 用户领域服务 - 处理跨实体的业务逻辑
 type UserDomainService struct {
@@ -24,91 +54,89 @@ func NewUserDomainService(userRepo UserRepository, orderRepo OrderRepository) *U
 }
 
 // CanUserPlaceOrder 检查用户是否可以下单
-func (s *UserDomainService) CanUserPlaceOrder(userID string) (bool, error) {
-	user, err := s.userRepository.FindByID(userID)
+func (s *UserDomainService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
+	user, err := s.userRepository.FindByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	
+
 	if !user.IsActive() {
 		return false, ErrUserNotActive
 	}
-	
+
 	if !user.CanMakePurchase() {
 		return false, errors.New("user cannot make purchases")
 	}
-	
-	// 检查用户是否有未完成的订单
-	pendingOrders, err := s.orderRepository.FindByUserIDAndStatus(userID, OrderStatusPending)
-	if err != nil {
-		return false, err
-	}
-	
-	// 如果用户有超过5个待处理订单，不允许继续下单
-	if len(pendingOrders) >= 5 {
-		return false, errors.New("user has too many pending orders")
-	}
-	
+
+	// TODO: 检查用户未完成订单数量
+	// pendingOrders, err := s.orderRepository.FindByUserIDAndStatus(ctx, userID, OrderStatusPending)
+	// if err != nil {
+	//     return false, err
+	// }
+	// if len(pendingOrders) >= 5 {
+	//     return false, errors.New("user has too many pending orders")
+	// }
+
 	return true, nil
 }
 
 // CalculateUserTotalSpent 计算用户总消费金额
-func (s *UserDomainService) CalculateUserTotalSpent(userID string) (Money, error) {
-	orders, err := s.orderRepository.FindByUserID(userID)
+func (s *UserDomainService) CalculateUserTotalSpent(ctx context.Context, userID string) (Money, error) {
+	orders, err := s.orderRepository.FindDeliveredOrdersByUserID(ctx, userID)
 	if err != nil {
 		return Money{}, err
 	}
-	
+
 	total := NewMoney(0, "CNY")
 	for _, order := range orders {
-		if order.Status() == OrderStatusDelivered {
-			total, _ = total.Add(order.TotalAmount())
-		}
+		total, _ = total.Add(order.TotalAmount())
 	}
-	
+
 	return *total, nil
 }
 
+// ============================================================================
+// 订单领域服务
+// ============================================================================
+
 // OrderDomainService 订单领域服务
+// DDD原则：领域服务只负责跨实体的业务规则验证，不负责持久化
 type OrderDomainService struct {
-	userRepository UserRepository
+	userRepository  UserRepository
 	orderRepository OrderRepository
 }
 
 // NewOrderDomainService 创建订单领域服务
 func NewOrderDomainService(userRepo UserRepository, orderRepo OrderRepository) *OrderDomainService {
 	return &OrderDomainService{
-		userRepository: userRepo,
+		userRepository:  userRepo,
 		orderRepository: orderRepo,
 	}
 }
 
-// ProcessOrder 处理订单 - 完整的订单处理流程
-func (s *OrderDomainService) ProcessOrder(orderID string) error {
-	order, err := s.orderRepository.FindByID(orderID)
+// CanProcessOrder 检查订单是否可以处理
+// DDD原则：领域服务只做业务规则验证，返回验证结果
+// 实际的状态变更和持久化由应用服务负责
+func (s *OrderDomainService) CanProcessOrder(ctx context.Context, orderID string) (*Order, error) {
+	order, err := s.orderRepository.FindByID(ctx, orderID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	
-	user, err := s.userRepository.FindByID(order.UserID())
+
+	user, err := s.userRepository.FindByID(ctx, order.UserID())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	
+
 	// 验证用户状态
 	if !user.IsActive() {
-		return ErrUserNotActive
+		return nil, ErrUserNotActive
 	}
-	
-	// 确认订单
-	if err := order.Confirm(); err != nil {
-		return err
+
+	// 验证订单状态
+	if order.Status() != OrderStatusPending {
+		return nil, errors.New("only pending orders can be processed")
 	}
-	
-	// 保存更新后的订单
-	if err := s.orderRepository.Save(order); err != nil {
-		return err
-	}
-	
-	return nil
+
+	return order, nil
 }

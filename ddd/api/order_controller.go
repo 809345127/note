@@ -38,13 +38,13 @@ func (c *OrderController) CreateOrder(ctx *gin.Context) {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
 	}
-	
-	order, err := c.orderService.CreateOrder(req)
+
+	order, err := c.orderService.CreateOrder(ctx.Request.Context(), req)
 	if err != nil {
 		HandleError(ctx, err, "Failed to create order", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, order, "Order created successfully")
 }
 
@@ -55,13 +55,13 @@ func (c *OrderController) GetOrder(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "Order ID is required", http.StatusBadRequest)
 		return
 	}
-	
-	order, err := c.orderService.GetOrder(orderID)
+
+	order, err := c.orderService.GetOrder(ctx.Request.Context(), orderID)
 	if err != nil {
 		HandleError(ctx, err, "Order not found", http.StatusNotFound)
 		return
 	}
-	
+
 	HandleSuccess(ctx, order, "Order retrieved successfully")
 }
 
@@ -72,13 +72,13 @@ func (c *OrderController) GetUserOrders(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "User ID is required", http.StatusBadRequest)
 		return
 	}
-	
-	orders, err := c.orderService.GetUserOrders(userID)
+
+	orders, err := c.orderService.GetUserOrders(ctx.Request.Context(), userID)
 	if err != nil {
 		HandleError(ctx, err, "Failed to get user orders", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, orders, "User orders retrieved successfully")
 }
 
@@ -105,12 +105,12 @@ func (c *OrderController) UpdateOrderStatus(ctx *gin.Context) {
 		OrderID: orderID,
 		Status:  req.Status,
 	}
-	
-	if err := c.orderService.UpdateOrderStatus(updateReq); err != nil {
+
+	if err := c.orderService.UpdateOrderStatus(ctx.Request.Context(), updateReq); err != nil {
 		HandleError(ctx, err, "Failed to update order status", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, nil, "Order status updated successfully")
 }
 
@@ -121,11 +121,11 @@ func (c *OrderController) ProcessOrder(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "Order ID is required", http.StatusBadRequest)
 		return
 	}
-	
-	if err := c.orderService.ProcessOrder(orderID); err != nil {
+
+	if err := c.orderService.ProcessOrder(ctx.Request.Context(), orderID); err != nil {
 		HandleError(ctx, err, "Failed to process order", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, nil, "Order processed successfully")
 }

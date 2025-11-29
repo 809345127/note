@@ -1,11 +1,40 @@
+/*
+Package service 应用层 - 业务流程编排
+
+应用层的职责：
+1. 接收外部请求（通常来自Controller）
+2. 调用领域服务进行业务规则验证
+3. 调用聚合根方法执行业务操作
+4. 调用仓储保存聚合根（仓储会自动发布事件）
+5. 返回结果给调用方
+
+应用服务 vs 领域服务：
+┌─────────────────────────────────────────────────────────────────┐
+│ 应用服务 (Application Service)                                   │
+│ - 编排业务流程（调用多个领域对象和服务）                             │
+│ - 负责调用Save持久化                                              │
+│ - 管理事务边界（通过UnitOfWork或数据库事务）                         │
+│ - 不包含业务规则（业务规则在领域层）                                 │
+├─────────────────────────────────────────────────────────────────┤
+│ 领域服务 (Domain Service)                                        │
+│ - 处理跨实体的业务规则                                            │
+│ - 不负责持久化（不调用Save）                                       │
+│ - 被应用服务调用                                                  │
+└─────────────────────────────────────────────────────────────────┘
+*/
 package service
 
 import (
-	"ddd-example/domain"
+	"context"
 	"errors"
-	"fmt"
 	"time"
+
+	"ddd-example/domain"
 )
+
+// ============================================================================
+// 订单应用服务
+// ============================================================================
 
 // OrderApplicationService 订单应用服务 - 协调订单相关的业务流程
 type OrderApplicationService struct {
@@ -30,6 +59,18 @@ func NewOrderApplicationService(
 		eventPublisher:     eventPublisher,
 	}
 }
+
+// ============================================================================
+// DTO定义 - 数据传输对象
+// ============================================================================
+//
+// DDD原则：DTO用于层间数据传输，与领域模型分离
+// - Request DTO：接收外部输入
+// - Response DTO：返回给外部调用方
+// 这样可以：
+// 1. 保护领域模型不被外部直接访问
+// 2. 灵活调整API结构而不影响领域模型
+// 3. 添加特定于展示层的验证和格式化
 
 // CreateOrderRequest 创建订单请求DTO
 type CreateOrderRequest struct {
@@ -72,66 +113,78 @@ type MoneyResponse struct {
 	Currency string `json:"currency"`
 }
 
+// ============================================================================
+// 应用服务方法 - 业务流程编排
+// ============================================================================
+
 // CreateOrder 创建订单
-func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderResponse, error) {
+// 应用服务方法的典型流程：
+// 1. 调用领域服务验证业务规则
+// 2. 转换DTO为领域对象
+// 3. 调用聚合根工厂方法创建实体
+// 4. 调用仓储Save保存（仓储会自动发布事件）
+// 5. 转换领域对象为Response DTO返回
+func (s *OrderApplicationService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*OrderResponse, error) {
 	// 检查用户是否可以下单
-	canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(req.UserID)
+	canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
 	if err != nil {
 		return nil, err
 	}
 	if !canPlaceOrder {
 		return nil, errors.New("user cannot place order")
 	}
-	
-	// 转换订单项
-	orderItems := make([]domain.OrderItem, len(req.Items))
+
+	// 转换订单项请求为领域模型
+	requests := make([]domain.OrderItemRequest, len(req.Items))
 	for i, item := range req.Items {
 		unitPrice := domain.NewMoney(item.UnitPrice, item.Currency)
-		orderItems[i] = domain.NewOrderItem(item.ProductID, item.ProductName, item.Quantity, *unitPrice)
+		requests[i] = domain.OrderItemRequest{
+			ProductID:   item.ProductID,
+			ProductName: item.ProductName,
+			Quantity:    item.Quantity,
+			UnitPrice:   *unitPrice,
+		}
 	}
-	
+
 	// 创建订单实体
-	order, err := domain.NewOrder(req.UserID, orderItems)
+	order, err := domain.NewOrder(req.UserID, requests)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 保存订单
-	if err := s.orderRepo.Save(order); err != nil {
+	if err := s.orderRepo.Save(ctx, order); err != nil {
 		return nil, err
 	}
-	
-	// 发布订单创建事件
-	event := domain.NewOrderPlacedEvent(order.ID(), order.UserID(), order.TotalAmount())
-	if err := s.eventPublisher.Publish(event); err != nil {
-		fmt.Printf("Failed to publish order placed event: %v\n", err)
-	}
-	
+
+	// 发布订单创建事件（事件已通过仓储自动发布）
+	// 如果手动发布，确保不重复发布
+
 	return s.convertToResponse(order), nil
 }
 
 // GetOrder 获取订单信息
-func (s *OrderApplicationService) GetOrder(orderID string) (*OrderResponse, error) {
-	order, err := s.orderRepo.FindByID(orderID)
+func (s *OrderApplicationService) GetOrder(ctx context.Context, orderID string) (*OrderResponse, error) {
+	order, err := s.orderRepo.FindByID(ctx, orderID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return s.convertToResponse(order), nil
 }
 
 // GetUserOrders 获取用户的所有订单
-func (s *OrderApplicationService) GetUserOrders(userID string) ([]*OrderResponse, error) {
-	orders, err := s.orderRepo.FindByUserID(userID)
+func (s *OrderApplicationService) GetUserOrders(ctx context.Context, userID string) ([]*OrderResponse, error) {
+	orders, err := s.orderRepo.FindByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	responses := make([]*OrderResponse, len(orders))
 	for i, order := range orders {
 		responses[i] = s.convertToResponse(order)
 	}
-	
+
 	return responses, nil
 }
 
@@ -142,12 +195,12 @@ type UpdateOrderStatusRequest struct {
 }
 
 // UpdateOrderStatus 更新订单状态
-func (s *OrderApplicationService) UpdateOrderStatus(req UpdateOrderStatusRequest) error {
-	order, err := s.orderRepo.FindByID(req.OrderID)
+func (s *OrderApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOrderStatusRequest) error {
+	order, err := s.orderRepo.FindByID(ctx, req.OrderID)
 	if err != nil {
 		return err
 	}
-	
+
 	// 根据请求的状态更新订单
 	switch domain.OrderStatus(req.Status) {
 	case domain.OrderStatusPending:
@@ -171,13 +224,26 @@ func (s *OrderApplicationService) UpdateOrderStatus(req UpdateOrderStatusRequest
 	default:
 		return errors.New("invalid order status")
 	}
-	
-	return s.orderRepo.Save(order)
+
+	return s.orderRepo.Save(ctx, order)
 }
 
 // ProcessOrder 处理订单
-func (s *OrderApplicationService) ProcessOrder(orderID string) error {
-	return s.orderDomainService.ProcessOrder(orderID)
+// DDD原则：应用服务负责编排流程（调用领域服务验证、修改状态、保存）
+func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
+	// 1. 通过领域服务验证订单是否可以处理
+	order, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+
+	// 2. 执行状态变更（聚合根方法）
+	if err := order.Confirm(); err != nil {
+		return err
+	}
+
+	// 3. 保存（仓储会自动发布领域事件）
+	return s.orderRepo.Save(ctx, order)
 }
 
 // convertToResponse 将订单实体转换为响应DTO

@@ -181,52 +181,41 @@ func (m Money) Add(other Money) (*Money, error) {
 **项目实现** (`domain/services.go`):
 ```go
 type UserDomainService struct {
-    userRepository  domain.UserRepository
-    orderRepository domain.OrderRepository
+    userRepository  UserRepository
+    orderRepository OrderRepository
 }
 
 // 检查用户是否可以创建订单
-func (s *UserDomainService) CanUserPlaceOrder(userID string) (bool, error) {
-    user, err := s.userRepository.FindByID(userID)
+// DDD原则：领域服务只做业务规则验证，不负责持久化
+func (s *UserDomainService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
+    user, err := s.userRepository.FindByID(ctx, userID)
     if err != nil {
         return false, err
     }
 
     // 检查用户是否激活
     if !user.IsActive() {
-        return false, domain.ErrUserNotActive
+        return false, ErrUserNotActive
     }
 
-    // 检查用户年龄
-    if user.Age() < 18 {
-        return false, errors.New("user is too young")
-    }
-
-    // 检查用户待处理订单数量
-    pendingOrders, err := s.orderRepository.FindByUserIDAndStatus(userID, domain.OrderStatusPending)
-    if err != nil {
-        return false, err
-    }
-
-    if len(pendingOrders) >= 3 {
-        return false, errors.New("user has too many pending orders")
+    // 检查用户是否可以购买（年龄等业务规则封装在实体内）
+    if !user.CanMakePurchase() {
+        return false, errors.New("user cannot make purchases")
     }
 
     return true, nil
 }
 
 // 计算用户总消费金额
-func (s *UserDomainService) CalculateUserTotalSpent(userID string) (domain.Money, error) {
-    orders, err := s.orderRepository.FindByUserID(userID)
+func (s *UserDomainService) CalculateUserTotalSpent(ctx context.Context, userID string) (Money, error) {
+    orders, err := s.orderRepository.FindDeliveredOrdersByUserID(ctx, userID)
     if err != nil {
-        return domain.Money{}, err
+        return Money{}, err
     }
 
-    total := domain.NewMoney(0, "CNY")
+    total := NewMoney(0, "CNY")
     for _, order := range orders {
-        if order.Status() != domain.OrderStatusCancelled {
-            total, _ = total.Add(order.TotalAmount())
-        }
+        total, _ = total.Add(order.TotalAmount())
     }
 
     return *total, nil
@@ -296,21 +285,27 @@ func NewOrderCreatedEvent(orderID, userID string, totalAmount Money) OrderCreate
 
 **项目实现** (`domain/repositories.go`):
 ```go
+// DDD原则：
+// 1. 仓储只负责聚合根的持久化
+// 2. 不应该暴露批量查询（如FindAll），这类操作应该放在查询服务中
+// 3. 使用NextIdentity生成ID
+// 4. 仓储在Save时发布聚合根的领域事件
+
 type UserRepository interface {
-    Save(user *User) error
-    FindByID(id string) (*User, error)
-    FindByEmail(email string) (*User, error)
-    FindAll() ([]*User, error)
-    Delete(id string) error
+    NextIdentity() string                             // 生成新的用户ID
+    Save(ctx context.Context, user *User) error       // 保存并发布事件
+    FindByID(ctx context.Context, id string) (*User, error)
+    FindByEmail(ctx context.Context, email string) (*User, error)
+    Remove(ctx context.Context, id string) error      // 逻辑删除
 }
 
 type OrderRepository interface {
-    Save(order *Order) error
-    FindByID(id string) (*Order, error)
-    FindByUserID(userID string) ([]*Order, error)
-    FindByUserIDAndStatus(userID string, status OrderStatus) ([]*Order, error)
-    FindAll() ([]*Order, error)
-    Delete(id string) error
+    NextIdentity() string
+    Save(ctx context.Context, order *Order) error     // 保存并发布事件
+    FindByID(ctx context.Context, id string) (*Order, error)
+    FindByUserID(ctx context.Context, userID string) ([]*Order, error)
+    FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*Order, error)
+    Remove(ctx context.Context, id string) error      // 逻辑删除（标记为已取消）
 }
 ```
 
@@ -491,20 +486,18 @@ func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserR
         return nil, ErrEmailAlreadyExists
     }
 
-    // 创建用户实体（业务逻辑在实体内部）
+    // 创建用户实体（聚合根在创建时自动记录领域事件）
     user, err := domain.NewUser(req.Name, req.Email, req.Age)
     if err != nil {
         return nil, err
     }
 
-    // 保存用户
+    // 保存用户（仓储会自动调用 user.PullEvents() 并发布事件）
     if err := s.userRepo.Save(user); err != nil {
         return nil, err
     }
 
-    // 发布领域事件
-    event := domain.NewUserCreatedEvent(user.ID(), user.Name(), user.Email().Value())
-    s.eventPublisher.Publish(event)
+    // 注意：事件发布由仓储在Save后自动完成，应用层不需要手动发布
 
     return &CreateUserResponse{
         ID:        user.ID(),
@@ -1152,12 +1145,17 @@ func (s *UserDomainService) CanUserPlaceOrder(userID string) (bool, error) {
 
 | 特征 | ApplicationService | DomainService |
 |------|--------------------|---------------|
-| **职责** | 业务流程编排、事务管理、事件发布 | 复杂业务规则和计算 |
-| **依赖** | Repository、DomainService、基础设施接口 | Repository（仅接口） |
-| **返回值** | DTO、错误信息 | 领域对象、基本类型 |
-| **事件发布** | ✅ | ❌ |
-| **事务管理** | ✅ | ❌ |
+| **职责** | 业务流程编排、事务管理 | 复杂业务规则验证和计算 |
+| **依赖** | Repository、DomainService | Repository（仅接口） |
+| **返回值** | DTO、错误信息 | 领域对象、基本类型、bool |
+| **事件发布** | ❌（由仓储自动完成） | ❌ |
+| **持久化调用** | ✅ 调用Repository.Save | ❌ 不调用Save |
 | **调用方** | Controller | ApplicationService |
+
+**重要说明**：
+- 事件发布由仓储在Save后自动完成，应用层和领域服务都不需要手动发布
+- 领域服务只做业务规则验证，返回验证结果，不负责持久化
+- 应用服务负责调用Save，仓储会自动调用`PullEvents()`并发布事件
 
 **记忆口诀**：
 

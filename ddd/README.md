@@ -1,138 +1,83 @@
 # DDD示例项目 - Go语言实现
 
-这是一个使用Go语言实现的领域驱动设计(DDD)基础示例项目，专为熟悉贫血模式的开发者设计，通过具体实现展示DDD的核心概念和实践方法。
+这是一个使用Go语言实现的领域驱动设计(DDD)示例项目，专为熟悉贫血模式的开发者设计，通过具体实现展示DDD的核心概念和实践方法。
+
+## 📚 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| **本文件 (README.md)** | 项目概述、快速开始、API示例 |
+| [DDD_CONCEPTS.md](DDD_CONCEPTS.md) | DDD核心概念详解、贫血模式对比、最佳实践、常见误区 |
+| [DDD_GUIDE.md](DDD_GUIDE.md) | 实践指南：聚合根、领域事件、工作单元、仓储模式 |
 
 ## 🎯 项目目标
 
-- **展示DDD核心概念**: 实体(Entity)、值对象(Value Object)、领域服务(Domain Service)、领域事件(Domain Event)
-- **对比贫血模式与DDD**: 帮助开发者理解从贫血模式到DDD架构的转变
+- **展示DDD核心概念**: 实体、值对象、聚合根、领域服务、领域事件、仓储、工作单元
+- **对比贫血模式与DDD**: 帮助开发者理解架构转变（详见 [DDD_CONCEPTS.md](DDD_CONCEPTS.md#从贫血模式到ddd)）
 - **提供完整示例**: 包含用户管理和订单管理的完整业务流程
-- **可运行代码**: 所有代码都可以直接运行和测试
+- **可运行代码**: 支持 Mock 和 MySQL 两种存储方式
 
 ## 🏗️ 项目架构
 
-项目严格遵循DDD分层架构：
+项目严格遵循DDD分层架构（详细架构图见 [DDD_CONCEPTS.md](DDD_CONCEPTS.md#分层架构)）：
 
 ```
 ddd/
-├── api/                    # 接口层 (Interface Layer)
-│   ├── user_controller.go     # 用户控制器
-│   ├── order_controller.go    # 订单控制器
-│   ├── health_controller.go   # 健康检查控制器
-│   ├── router.go             # 路由配置
-│   ├── middleware.go         # 中间件
-│   └── response.go           # 响应处理
-├── domain/                 # 领域层 (Domain Layer)
-│   ├── user.go               # 用户实体
-│   ├── order.go              # 订单实体
-│   ├── value_objects.go      # 值对象
-│   ├── services.go           # 领域服务
-│   ├── events.go             # 领域事件
-│   └── repositories.go       # 仓储接口
-├── repository/             # 仓储层接口定义
-│   └── interfaces.go         # 仓储接口
-├── mock/                   # 仓储层Mock实现
-│   ├── user_repository.go    # 用户仓储Mock
-│   ├── order_repository.go   # 订单仓储Mock
-│   └── event_publisher.go    # 事件发布器Mock
-├── service/                # 应用层服务 (Application Layer)
-│   ├── user_service.go       # 用户应用服务
-│   └── order_service.go      # 订单应用服务
-├── model/                  # 数据模型
-│   └── models.go             # 数据模型定义
-├── util/                   # 工具函数
-│   └── utils.go              # 通用工具类
-├── cmd/                    # 命令行入口
-│   └── app.go                # 应用程序入口
-├── main.go                 # 主函数
-└── go.mod                  # Go模块定义
+├── api/                        # 表示层 (Presentation Layer)
+│   ├── user_controller.go
+│   ├── order_controller.go
+│   ├── health_controller.go
+│   ├── router.go
+│   ├── middleware.go
+│   └── response.go
+├── service/                    # 应用层 (Application Layer)
+│   ├── user_service.go
+│   └── order_service.go
+├── domain/                     # 领域层 (Domain Layer) - 核心层
+│   ├── user.go                 # 用户聚合根
+│   ├── order.go                # 订单聚合根
+│   ├── value_objects.go        # 值对象 (Email, Money, OrderItem)
+│   ├── services.go             # 领域服务
+│   ├── events.go               # 领域事件
+│   ├── repositories.go         # 仓储接口
+│   ├── aggregate.go            # 聚合标记接口
+│   ├── event_publisher.go      # 事件发布接口
+│   ├── unit_of_work.go         # 工作单元接口
+│   └── tx_unit_of_work.go      # 事务工作单元
+├── infrastructure/             # 基础设施层 (Infrastructure Layer)
+│   └── persistence/
+│       ├── mocks/              # Mock 实现
+│       │   ├── user_repository.go
+│       │   ├── order_repository.go
+│       │   └── event_publisher.go
+│       └── mysql/              # MySQL 实现
+│           ├── mysql_config.go
+│           ├── user_repository.go
+│           └── order_repository.go
+├── util/
+│   └── utils.go
+├── cmd/
+│   └── app.go
+├── main.go
+├── go.mod
+├── README.md                   # 本文件
+├── DDD_CONCEPTS.md             # DDD概念详解
+└── DDD_GUIDE.md                # DDD实践指南
 ```
 
-## 🧩 DDD核心概念实现
+## 🧩 DDD核心概念
 
-### 1. 实体 (Entity)
+> 📖 详细概念讲解请参阅 [DDD_CONCEPTS.md](DDD_CONCEPTS.md)，实现细节请参阅 [DDD_GUIDE.md](DDD_GUIDE.md)
 
-**用户实体** (`domain/user.go`):
-```go
-type User struct {
-    id        string
-    name      string
-    email     Email
-    age       int
-    isActive  bool
-    createdAt time.Time
-    updatedAt time.Time
-}
-```
-
-特点：
-- 具有唯一标识(ID)
-- 包含业务逻辑和状态
-- 通过方法暴露行为，而不是直接暴露状态
-
-### 2. 值对象 (Value Object)
-
-**Email值对象** (`domain/value_objects.go`):
-```go
-type Email struct {
-    value string
-}
-```
-
-**Money值对象** (`domain/value_objects.go`):
-```go
-type Money struct {
-    amount   int64
-    currency string
-}
-```
-
-特点：
-- 不可变(immutable)
-- 没有唯一标识
-- 通过值相等性进行比较
-- 封装业务规则（如邮箱格式验证）
-
-### 3. 领域服务 (Domain Service)
-
-**用户领域服务** (`domain/services.go`):
-```go
-type UserDomainService struct {
-    userRepository  UserRepository
-    orderRepository OrderRepository
-}
-```
-
-特点：
-- 处理跨实体的业务逻辑
-- 协调多个实体完成复杂业务操作
-- 不包含状态，只包含行为
-
-### 4. 领域事件 (Domain Event)
-
-**用户创建事件** (`domain/events.go`):
-```go
-type UserCreatedEvent struct {
-    userID     string
-    name       string
-    email      string
-    occurredOn time.Time
-}
-```
-
-特点：
-- 表示领域中发生的重要事件
-- 用于解耦不同模块
-- 支持事件驱动架构
-
-### 5. 仓储 (Repository)
-
-仓储接口定义在 `domain/repositories.go` 中，Mock实现在 `mock/` 目录下。
-
-特点：
-- 提供领域对象的持久化机制
-- 屏蔽底层数据存储细节
-- 提供领域语义的数据访问接口
+| 概念 | 说明 | 项目实现 |
+|------|------|----------|
+| **聚合根** | 一组相关对象的一致性边界入口 | `User`, `Order` |
+| **实体** | 有唯一标识，包含业务逻辑 | `User`, `Order` |
+| **值对象** | 不可变，通过值比较 | `Email`, `Money`, `OrderItem` |
+| **领域服务** | 跨实体的业务规则 | `UserDomainService`, `OrderDomainService` |
+| **领域事件** | 记录业务系统中的重要事件 | `UserCreatedEvent`, `OrderPlacedEvent` |
+| **仓储** | 聚合根的持久化抽象 | `UserRepository`, `OrderRepository` |
+| **工作单元** | 事务边界管理 | `UnitOfWork` |
 
 ## 🚀 快速开始
 
@@ -234,70 +179,15 @@ curl http://localhost:8080/api/v1/orders/user/user-1
 6. **领域事件**发布订单创建事件
 7. **API层**返回创建结果
 
-## 🔍 从贫血模式到DDD的转变
+## 🔍 从贫血模式到DDD
 
-### 贫血模式的问题
+> 📖 详细对比和代码示例请参阅 [DDD_CONCEPTS.md - 从贫血模式到DDD](DDD_CONCEPTS.md#从贫血模式到ddd)
 
-在贫血模式中，通常会有：
-- **贫血实体**: 只包含数据，没有业务逻辑
-- **事务脚本**: 所有业务逻辑都在服务层
-- **低内聚**: 业务逻辑分散在各个服务中
-
-```go
-// 贫血模式示例（不推荐）
-type User struct {
-    ID    string `json:"id"`
-    Name  string `json:"name"`
-    Email string `json:"email"`
-    Age   int    `json:"age"`
-    // 没有业务逻辑方法
-}
-
-// 业务逻辑在服务层
-func (s *UserService) CreateUser(name, email string, age int) error {
-    if name == "" {
-        return errors.New("name cannot be empty")
-    }
-    if age < 0 || age > 150 {
-        return errors.New("invalid age")
-    }
-    // ... 更多验证逻辑
-}
-```
-
-### DDD的优势
-
-在DDD中：
-- **富领域模型**: 实体包含业务逻辑和状态
-- **高内聚**: 相关逻辑封装在实体内部
-- **更好的可维护性**: 业务逻辑集中在领域层
-
-```go
-// DDD模式（推荐）
-type User struct {
-    id    string
-    name  string
-    email Email
-    age   int
-    // 状态私有化
-}
-
-// 业务逻辑在实体内部
-func NewUser(name string, email string, age int) (*User, error) {
-    if name == "" {
-        return nil, ErrInvalidName
-    }
-    if age < 0 || age > 150 {
-        return nil, ErrInvalidAge
-    }
-    // ... 创建逻辑
-}
-
-// 通过方法暴露行为
-func (u *User) CanMakePurchase() bool {
-    return u.isActive && u.age >= 18
-}
-```
+| 贫血模式 | DDD模式 |
+|---------|---------|
+| 实体只包含数据 | 实体包含业务逻辑 |
+| 业务逻辑分散在服务层 | 业务逻辑封装在领域层 |
+| 低内聚、难维护 | 高内聚、易测试 |
 
 ## 🧪 测试数据
 
@@ -313,61 +203,16 @@ func (u *User) CanMakePurchase() bool {
 - **order-2**: user-2的订单，包含2个AirPods Pro（已确认）
 - **order-3**: user-1的订单，包含iPhone 15（待处理）
 
-## 🔧 扩展建议
+## 🔧 扩展方向
 
-### 1. 添加真实数据库
-- 实现真实的仓储层，连接MySQL、PostgreSQL等数据库
-- 添加数据库迁移脚本
-- 实现事务管理
-
-### 2. 增强领域事件
-- 实现事件总线（Event Bus）
-- 添加事件存储（Event Store）
-- 实现事件溯源（Event Sourcing）
-
-### 3. 添加CQRS模式
-- 分离命令和查询职责
-- 实现读写分离
-- 添加专门的查询模型
-
-### 4. 添加更多限界上下文
-- 商品管理上下文
-- 库存管理上下文
-- 支付管理上下文
+- **CQRS模式**: 分离命令和查询职责（详见 [DDD_GUIDE.md - 进阶主题](DDD_GUIDE.md#进阶主题)）
+- **事件溯源**: 通过事件序列重建聚合状态
+- **更多限界上下文**: 商品管理、库存管理、支付管理
 
 ## 📚 学习资源
 
-### DDD核心概念
+> 📖 更多学习资源请参阅 [DDD_CONCEPTS.md - 学习资源](DDD_CONCEPTS.md#学习资源)
+
+**推荐书籍**:
 - 《领域驱动设计》- Eric Evans
 - 《实现领域驱动设计》- Vaughn Vernon
-- 《领域驱动设计模式、原理与实践》- Scott Millett
-
-### Go语言资源
-- [Go官方文档](https://golang.org/doc/)
-- [Effective Go](https://golang.org/doc/effective_go.html)
-- [Go by Example](https://gobyexample.com/)
-
-## 🤝 贡献指南
-
-欢迎提交Issue和Pull Request来改进这个项目。在贡献之前，请：
-
-1. 阅读项目文档和代码
-2. 在Issue中描述你的改进建议
-3. 遵循Go语言的编码规范
-4. 添加适当的测试用例
-
-## 📄 许可证
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
-## 🆘 支持
-
-如果你在使用过程中遇到问题，可以：
-
-1. 查看项目文档
-2. 在Issue中寻求帮助
-3. 联系项目维护者
-
----
-
-**Happy Coding! 🎉**

@@ -38,13 +38,13 @@ func (c *UserController) CreateUser(ctx *gin.Context) {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
 	}
-	
-	user, err := c.userService.CreateUser(req)
+
+	user, err := c.userService.CreateUser(ctx.Request.Context(), req)
 	if err != nil {
 		HandleError(ctx, err, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, user, "User created successfully")
 }
 
@@ -55,13 +55,13 @@ func (c *UserController) GetUser(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "User ID is required", http.StatusBadRequest)
 		return
 	}
-	
-	user, err := c.userService.GetUser(userID)
+
+	user, err := c.userService.GetUser(ctx.Request.Context(), userID)
 	if err != nil {
 		HandleError(ctx, err, "User not found", http.StatusNotFound)
 		return
 	}
-	
+
 	HandleSuccess(ctx, user, "User retrieved successfully")
 }
 
@@ -78,7 +78,7 @@ func (c *UserController) GetAllUsers(ctx *gin.Context) {
 
 // UpdateUserStatusRequest 更新用户状态请求
 type UpdateUserStatusRequest struct {
-	Active bool `json:"active" binding:"required"`
+	Active bool `json:"active"`
 }
 
 // UpdateUserStatus 更新用户状态
@@ -99,12 +99,12 @@ func (c *UserController) UpdateUserStatus(ctx *gin.Context) {
 		UserID: userID,
 		Active: req.Active,
 	}
-	
-	if err := c.userService.UpdateUserStatus(updateReq); err != nil {
+
+	if err := c.userService.UpdateUserStatus(ctx.Request.Context(), updateReq); err != nil {
 		HandleError(ctx, err, "Failed to update user status", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, nil, "User status updated successfully")
 }
 
@@ -115,13 +115,13 @@ func (c *UserController) GetUserTotalSpent(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "User ID is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	req := service.GetUserTotalSpentRequest{UserID: userID}
-	response, err := c.userService.GetUserTotalSpent(req)
+	response, err := c.userService.GetUserTotalSpent(ctx.Request.Context(), req)
 	if err != nil {
 		HandleError(ctx, err, "Failed to get user total spent", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, response, "User total spent retrieved successfully")
 }

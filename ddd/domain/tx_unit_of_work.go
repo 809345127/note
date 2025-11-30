@@ -8,12 +8,12 @@ import (
 
 // TxUnitOfWork 事务工作单元实现
 type TxUnitOfWork struct {
-	tracker         *AggregateTracker
-	txManager       TransactionManager
-	mu              sync.Mutex
-	isExecuted      bool
-	handlers        map[string][]func(ExecuteEvent) error
-	isolationLevel  IsolationLevel
+	tracker        *AggregateTracker
+	txManager      TransactionManager
+	mu             sync.Mutex
+	isExecuted     bool
+	handlers       map[string][]func(ExecuteEvent) error
+	isolationLevel IsolationLevel
 }
 
 // IsolationLevel 事务隔离级别
@@ -41,9 +41,9 @@ type TxUnitOfWorkConfig struct {
 
 // ExecuteEvent 执行事件
 type ExecuteEvent struct {
-	Type      ExecuteEventType
+	Type       ExecuteEventType
 	Aggregates []AggregateRoot
-	Error     error
+	Error      error
 }
 
 // ExecuteEventType 执行事件类型
@@ -230,8 +230,9 @@ type MockTxUnitOfWorkFactory struct {
 }
 
 // NewMockTxUnitOfWorkFactory 创建Mock工作单元工厂
-func NewMockTxUnitOfWorkFactory(userRepo UserRepository, orderRepo OrderRepository, publisher DomainEventPublisher) *MockTxUnitOfWorkFactory {
-	tracker := NewAggregateTracker(userRepo, orderRepo, publisher)
+// outboxRepo: 可以传 nil，表示不持久化事件（仅打印日志）
+func NewMockTxUnitOfWorkFactory(userRepo UserRepository, orderRepo OrderRepository, outboxRepo OutboxRepository) *MockTxUnitOfWorkFactory {
+	tracker := NewAggregateTracker(userRepo, orderRepo, outboxRepo)
 	return &MockTxUnitOfWorkFactory{
 		tracker:   tracker,
 		txManager: nil, // Mock不需要真实事务管理器

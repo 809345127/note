@@ -186,7 +186,7 @@ type UserDomainService struct {
 }
 
 // 检查用户是否可以创建订单
-// DDD原则：领域服务只做业务规则验证，不负责持久化
+// DDD原则：领域服务可依赖 Repository 接口查询数据，但不调用 Save 持久化
 func (s *UserDomainService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
     user, err := s.userRepository.FindByID(ctx, userID)
     if err != nil {
@@ -286,14 +286,14 @@ func NewOrderCreatedEvent(orderID, userID string, totalAmount Money) OrderCreate
 **项目实现** (`domain/repositories.go`):
 ```go
 // DDD原则：
-// 1. 仓储只负责聚合根的持久化
+// 1. 仓储只负责聚合根的持久化，不发布事件
 // 2. 不应该暴露批量查询（如FindAll），这类操作应该放在查询服务中
 // 3. 使用NextIdentity生成ID
-// 4. 仓储在Save时发布聚合根的领域事件
+// 4. 事件由 UoW 保存到 outbox 表，后台 Message Relay 异步发布
 
 type UserRepository interface {
     NextIdentity() string                             // 生成新的用户ID
-    Save(ctx context.Context, user *User) error       // 保存并发布事件
+    Save(ctx context.Context, user *User) error       // 只负责持久化
     FindByID(ctx context.Context, id string) (*User, error)
     FindByEmail(ctx context.Context, email string) (*User, error)
     Remove(ctx context.Context, id string) error      // 逻辑删除
@@ -301,7 +301,7 @@ type UserRepository interface {
 
 type OrderRepository interface {
     NextIdentity() string
-    Save(ctx context.Context, order *Order) error     // 保存并发布事件
+    Save(ctx context.Context, order *Order) error     // 只负责持久化
     FindByID(ctx context.Context, id string) (*Order, error)
     FindByUserID(ctx context.Context, userID string) ([]*Order, error)
     FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*Order, error)
@@ -474,9 +474,10 @@ func (c *UserController) CreateUser(ctx *gin.Context) {
 
 ```go
 type UserApplicationService struct {
-    userRepo          domain.UserRepository
-    userDomainService *domain.UserDomainService
-    eventPublisher    domain.DomainEventPublisher
+    userRepo          domain.UserRepository      // ✓ 依赖仓储接口
+    orderRepo         domain.OrderRepository     // ✓ 可依赖多个仓储
+    userDomainService *domain.UserDomainService  // ✓ 依赖领域服务
+    uow               domain.UnitOfWork          // ✓ 依赖工作单元（管理事务和事件）
 }
 
 func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) {
@@ -492,12 +493,12 @@ func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserR
         return nil, err
     }
 
-    // 保存用户（仓储会自动调用 user.PullEvents() 并发布事件）
+    // 保存用户（仓储只负责持久化，不发布事件）
     if err := s.userRepo.Save(user); err != nil {
         return nil, err
     }
 
-    // 注意：事件发布由仓储在Save后自动完成，应用层不需要手动发布
+    // 注意：事件由 UoW 保存到 outbox 表，后台 Message Relay 异步发布
 
     return &CreateUserResponse{
         ID:        user.ID(),
@@ -1006,7 +1007,7 @@ func (s *OrderDomainService) ProcessOrder(orderID string) error {
 }
 ```
 
-### 4. ApplicationService 与 DomainService 职责划分
+### 5. ApplicationService 与 DomainService 职责划分
 
 在DDD中，ApplicationService 和 DomainService 有明确的职责边界和依赖规则：
 
@@ -1023,12 +1024,12 @@ func (s *OrderDomainService) ProcessOrder(orderID string) error {
 type UserApplicationService struct {
     userRepo          domain.UserRepository      // ✓ 依赖仓储接口
     userDomainService *domain.UserDomainService  // ✓ 依赖领域服务
-    eventPublisher    domain.DomainEventPublisher // ✓ 依赖基础设施接口
+    uow               domain.UnitOfWork          // ✓ 依赖工作单元（管理事务和事件）
 }
 ```
 
 ```go
-// ✅ 应用服务：协调业务流程、事务管理、事件发布
+// ✅ 应用服务：协调业务流程、事务管理
 func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) {
     // 1. 验证唯一性（应用层职责）
     existingUser, _ := s.userRepo.FindByEmail(req.Email)
@@ -1036,23 +1037,45 @@ func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserR
         return nil, ErrEmailExists
     }
 
-    // 2. 创建实体（调用领域层）
+    // 2. 创建实体（聚合根在创建时自动记录领域事件）
     user, err := domain.NewUser(req.Name, req.Email, req.Age)
     if err != nil {
         return nil, err
     }
 
-    // 3. 保存聚合
+    // 3. 保存聚合（仓储只负责持久化，事件由 UoW 保存到 outbox 表）
     if err := s.userRepo.Save(user); err != nil {
         return nil, err
     }
 
-    // 4. 发布事件（协调基础设施）
-    event := domain.NewUserCreatedEvent(user.ID(), user.Name())
-    s.eventPublisher.Publish(event)
-
-    // 5. DTO转换
+    // 4. DTO转换
     return s.convertToResponse(user), nil
+}
+```
+
+**事件保存的两种场景：**
+
+| 事件类型 | 产生位置 | 保存到 outbox | 示例 |
+|---------|---------|--------------|------|
+| 聚合根状态变更事件 | 聚合根内部 | UoW 自动收集并保存 | UserCreated, OrderPlaced |
+| 跨聚合业务流程事件 | ApplicationService | 手动保存到 outbox | CheckoutCompleted, TransferCompleted |
+
+> **重要**：所有事件都通过 outbox 表 + Message Relay 发布，Application Service 不直接发布事件！
+
+```go
+// ✅ 跨聚合业务流程完成后，将流程事件保存到 outbox 表
+func (s *OrderApplicationService) CompleteCheckout(ctx context.Context, req CheckoutRequest) error {
+    // 1. 扣减库存（调用库存聚合）
+    // 2. 创建订单（订单聚合，UoW 自动保存 OrderCreated 到 outbox）
+    // 3. 扣款（调用支付服务）
+
+    // 4. 保存"流程完成"事件到 outbox（不属于任何单一聚合根）
+    // 事件由后台 Message Relay 异步发布
+    event := NewCheckoutCompletedEvent(orderID, userID)
+    if err := s.outboxRepo.SaveEvent(ctx, event); err != nil {
+        return err
+    }
+    return nil
 }
 ```
 
@@ -1067,9 +1090,9 @@ func (s *UserApplicationService) ActivateUser(userID string) error {
         return err
     }
 
-    user.Activate()  // 调用实体方法
+    user.Activate()  // 调用实体方法（实体内部会记录 UserActivated 事件）
 
-    // 未来可能添加：事件发布、日志记录等
+    // 仓储只负责持久化，UoW 会收集事件保存到 outbox 表
     return s.userRepo.Save(user)
 }
 ```
@@ -1086,42 +1109,167 @@ func (c *UserController) ActivateUser(ctx *gin.Context) {
 #### DomainService 的依赖范围和职责
 
 **DomainService 可以依赖：**
-1. **Repository 接口** - 获取多个聚合根
+1. **Repository 接口** - 获取多个聚合根（仅查询）
 2. **值对象** - 执行计算和验证
 
 **DomainService 不能依赖：**
 - ❌ 基础设施具体实现（数据库、消息队列）
-- ❌ ApplicationService（避免循环依赖）
+- ❌ ApplicationService（违反分层原则）
 - ❌ HTTP/Web框架
 
-**DomainService 的核心职责（业务规则）：**
+#### 服务间的依赖规则
+
+**依赖关系总览：**
+
+| 依赖方向 | 允许？ | 原因 |
+|---------|-------|------|
+| AppService → DomainService | ✅ 推荐 | 正常分层依赖 |
+| AppService → 另一个 AppService | ❌ 禁止 | 事务边界混乱 |
+| DomainService → 另一个 DomainService | ⚠️ 可以但不推荐 | 考虑合并或抽取 |
+| DomainService → AppService | ❌ 禁止 | 违反分层原则 |
+
+**1. ApplicationService 之间：绝对禁止循环依赖**
+
 ```go
+// ❌ 错误：ApplicationService 互相依赖
+type UserAppService struct {
+    orderAppService *OrderAppService  // A → B
+}
+type OrderAppService struct {
+    userAppService *UserAppService    // B → A  灾难！
+}
+```
+
+**为什么禁止？**
+- **事务边界混乱**：A 开启事务调用 B，B 又调用 A，谁管事务？
+- **用例边界不清**：说明职责划分有问题
+- **无限递归风险**
+
+**正确做法：共同逻辑下沉到 DomainService**
+
+```go
+// ✅ 正确：通过 DomainService 共享业务逻辑
+type UserAppService struct {
+    userDomainService  *UserDomainService
+    orderDomainService *OrderDomainService  // 可以依赖多个领域服务
+}
+type OrderAppService struct {
+    userDomainService  *UserDomainService   // 同样依赖领域服务，不互相依赖
+    orderDomainService *OrderDomainService
+}
+```
+
+**2. DomainService 之间：技术上可以，但不推荐**
+
+```go
+// ⚠️ 不推荐：说明领域边界划分有问题
 type UserDomainService struct {
-    userRepo  domain.UserRepository   // ✓ 依赖仓储接口
-    orderRepo domain.OrderRepository  // ✓ 依赖仓储接口
+    orderDomainService *OrderDomainService
+}
+type OrderDomainService struct {
+    userDomainService *UserDomainService  // 循环了
 }
 ```
+
+**如果出现这种情况，考虑：**
+1. 合并成一个 DomainService
+2. 抽取共同逻辑到第三个 DomainService
+3. 重新审视领域边界划分
+
+**通俗理解**：
+> ApplicationService 是"用例入口"，每个入口独立，不能互相调用（否则谁是入口？）
+> DomainService 是"业务顾问"，顾问之间可以协作，但频繁互相依赖说明分工有问题。
+
+#### DomainService 与 Repository 的交互原则
+
+**核心原则：DomainService 只读不写**
+
+| 操作类型 | DomainService | ApplicationService | 说明 |
+|---------|---------------|-------------------|------|
+| 简单查询 | ⚠️ 可以，但建议传入 | ✅ 查询后传入 | 传入更易测试 |
+| 业务逻辑查询 | ✅ 可以主动查 | ✅ 也可以 | 查询逻辑本身是业务规则 |
+| **Save / Update** | **❌ 绝对禁止** | **✅ 唯一负责** | 事务边界在应用层 |
+| **Delete** | **❌ 绝对禁止** | **✅ 唯一负责** | 同上 |
+
+**通俗理解**：
+> DomainService 像一个"顾问"，只负责回答"能不能做"、"怎么算"，但不动手改数据。
+> ApplicationService 像一个"经理"，听完顾问的建议后，决定是否执行并负责落地。
+
+**示例1：简单查询 - 推荐由 ApplicationService 传入**
 
 ```go
-// ✅ 领域服务：执行跨实体的复杂业务逻辑
-func (s *UserDomainService) CanUserPlaceOrder(userID string) (bool, error) {
-    // 通过Repository获取多个实体
-    user, err := s.userRepo.FindByID(userID)
-    if err != nil {
-        return false, err
-    }
+// ✅ 推荐：ApplicationService 查询后传入，DomainService 更纯净易测试
+// ApplicationService
+func (s *OrderApplicationService) PlaceOrder(req PlaceOrderRequest) error {
+    user, _ := s.userRepo.FindByID(req.UserID)
+    pendingOrders, _ := s.orderRepo.FindPendingByUserID(req.UserID)
 
-    orders, err := s.orderRepo.FindByUserID(userID)
-    if err != nil {
-        return false, err
+    // 传入实体，DomainService 不依赖 Repository
+    if !s.userDomainService.CanUserPlaceOrder(user, pendingOrders) {
+        return errors.New("cannot place order")
     }
+    // ...
+}
 
-    // 执行复杂业务判断：涉及User和Order两个聚合
-    return user.IsActive() &&
-           user.Age() >= 18 &&
-           len(orders) < 5
+// DomainService - 纯函数，易于单元测试
+func (s *UserDomainService) CanUserPlaceOrder(user *User, pendingOrders []*Order) bool {
+    return user.IsActive() && user.Age() >= 18 && len(pendingOrders) < 5
 }
 ```
+
+**示例2：业务逻辑查询 - DomainService 可主动查询**
+
+```go
+// ✅ 合理：查询逻辑本身涉及业务规则，DomainService 主动查询更内聚
+// 场景：根据用户等级决定计算折扣的数据范围
+func (s *UserDomainService) CalculateDiscount(ctx context.Context, userID string) (Money, error) {
+    user, _ := s.userRepo.FindByID(ctx, userID)
+
+    var orders []*Order
+    if user.IsVIP() {
+        // VIP用户：看过去一年的消费计算折扣
+        orders, _ = s.orderRepo.FindByUserIDAfter(ctx, userID, time.Now().AddDate(-1, 0, 0))
+    } else {
+        // 普通用户：只看过去一个月
+        orders, _ = s.orderRepo.FindByUserIDAfter(ctx, userID, time.Now().AddDate(0, -1, 0))
+    }
+
+    // 根据历史消费计算折扣...
+    return calculateDiscountFromOrders(orders), nil
+}
+```
+
+**示例3：Save/Update - 绝对只能在 ApplicationService**
+
+```go
+// ❌ 错误：DomainService 调用 Save
+func (s *OrderDomainService) ProcessOrder(ctx context.Context, orderID string) error {
+    order, _ := s.orderRepo.FindByID(ctx, orderID)
+    order.MarkAsProcessing()
+    return s.orderRepo.Save(ctx, order)  // ❌ 禁止！DomainService 不能调用 Save
+}
+
+// ✅ 正确：ApplicationService 负责持久化
+func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
+    // 1. DomainService 只做验证（只读）
+    order, err := s.orderDomainService.ValidateAndGetOrder(ctx, orderID)
+    if err != nil {
+        return err
+    }
+
+    // 2. 修改状态
+    order.MarkAsProcessing()
+
+    // 3. ApplicationService 负责持久化
+    return s.orderRepo.Save(ctx, order)  // ✅ 正确位置
+}
+```
+
+**为什么 Save 必须在 ApplicationService？**
+1. **事务边界** - 一个业务操作可能涉及多个 Save，事务管理是应用层职责
+2. **编排控制** - ApplicationService 决定"何时"、"是否"持久化
+3. **无副作用** - DomainService 保持纯粹，只做验证和计算，更易测试
+4. **单一职责** - 领域服务专注业务规则，应用服务专注流程协调
 
 #### 职责划分决策树
 
@@ -1146,23 +1294,25 @@ func (s *UserDomainService) CanUserPlaceOrder(userID string) (bool, error) {
 | 特征 | ApplicationService | DomainService |
 |------|--------------------|---------------|
 | **职责** | 业务流程编排、事务管理 | 复杂业务规则验证和计算 |
-| **依赖** | Repository、DomainService | Repository（仅接口） |
+| **依赖** | Repository、DomainService、UoW | Repository（仅接口） |
 | **返回值** | DTO、错误信息 | 领域对象、基本类型、bool |
-| **事件发布** | ❌（由仓储自动完成） | ❌ |
+| **事件处理** | 通过 UoW 保存到 outbox 表 | ❌ 不处理事件 |
 | **持久化调用** | ✅ 调用Repository.Save | ❌ 不调用Save |
 | **调用方** | Controller | ApplicationService |
 
 **重要说明**：
-- 事件发布由仓储在Save后自动完成，应用层和领域服务都不需要手动发布
-- 领域服务只做业务规则验证，返回验证结果，不负责持久化
-- 应用服务负责调用Save，仓储会自动调用`PullEvents()`并发布事件
+- **事件处理**：UoW 收集聚合根事件保存到 outbox 表；跨聚合流程事件由 AppService 手动保存到 outbox；统一由 Message Relay 异步发布
+- **领域服务查询**：简单查询优先传入，业务逻辑查询可主动调用 Repository
+- **持久化操作**：Save/Update/Delete **只能**由 ApplicationService 调用，DomainService 绝对禁止
 
 **记忆口诀**：
 
+> **"领域服务只读不写，应用服务管读写"**
+>
 > **"简单实体直接调，复杂跨域用域服，所有接口过应用"**
 
 - **简单操作** → ApplicationService → 调用实体方法 → 保存
-- **复杂业务** → ApplicationService → 调用DomainService → （可选）保存
+- **复杂业务** → ApplicationService → 调用DomainService（只读验证） → 保存
 - **所有入口** → 必须经过ApplicationService，不能绕过
 
 ## 🌟 最佳实践

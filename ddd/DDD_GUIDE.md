@@ -151,10 +151,25 @@ var _ = IsAggregateRoot(&Order{})
 
 ### 核心原则
 
-1. **聚合根生成事件**：在状态变更时记录事件
-2. **仓储发布事件**：在持久化成功后发布
+1. **聚合根产生事件**：在状态变更时记录事件到内存
+2. **UoW 统一保存事件**：在事务提交前，将事件与业务数据一起落库（Outbox Pattern）
+3. **事务提交后发布**：后台进程异步读取 outbox 表发布到消息队列
 
-### 聚合根生成事件
+```
+┌─────────────────────────────────────────────────────────┐
+│  UnitOfWork.Execute()                                   │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ BEGIN TRANSACTION                                 │  │
+│  │   repo.Save(order)    → 保存聚合根数据            │  │
+│  │   outbox.Save(events) → 保存事件到outbox表        │  │
+│  │ COMMIT                                            │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  后台进程轮询 outbox 表 → 发布到消息队列 → 删除已发送记录 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 聚合根产生事件
 
 ```go
 // domain/order.go
@@ -198,53 +213,34 @@ func (o *Order) PullEvents() []DomainEvent {
 }
 ```
 
-### 仓储发布事件
+### 为什么不在仓储中直接发布事件？
+
+**错误示例（不要这样做）：**
 
 ```go
-// infrastructure/persistence/mysql/user_repository.go
-type UserRepository struct {
-    db             *sql.DB
-    eventPublisher domain.DomainEventPublisher  // 仓储持有事件发布器
-}
-
-func NewUserRepository(db *sql.DB, eventPublisher domain.DomainEventPublisher) *UserRepository {
-    return &UserRepository{
-        db:             db,
-        eventPublisher: eventPublisher,
-    }
-}
-
 func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
-    // 1. 保存到数据库
     _, err := r.db.ExecContext(ctx, `INSERT INTO users ...`)
     if err != nil {
         return err
     }
-
-    // 2. 获取并发布事件（DDD核心原则）
-    r.publishEvents(user.PullEvents())
-
+    // ❌ 错误：事务可能还未提交，或后续操作失败导致回滚
+    // 但事件已经发出去了，造成数据不一致！
+    r.eventPublisher.Publish(user.PullEvents())
     return nil
 }
-
-// publishEvents 发布领域事件（失败不影响主流程，保证最终一致性）
-func (r *UserRepository) publishEvents(events []domain.DomainEvent) {
-    if r.eventPublisher == nil {
-        return
-    }
-    for _, event := range events {
-        if err := r.eventPublisher.Publish(event); err != nil {
-            log.Printf("[WARN] Failed to publish event %s: %v", event.EventName(), err)
-        }
-    }
-}
 ```
+
+**问题：** 事务是在应用服务层（通过 UoW）管理的，仓储只是事务中的一环。如果在 repo.Save() 中直接发布事件，可能出现：
+1. 事务还没提交，事件就发出去了
+2. 后续操作失败导致事务回滚，但事件已经被消费
+
+**正确做法：** 由 UoW 在事务提交前统一保存事件到 outbox 表，事务提交后由后台进程异步发布。
 
 ---
 
 ## 工作单元（Unit of Work）
 
-工作单元模式用于管理事务边界，确保多个聚合操作的一致性。
+工作单元模式用于管理事务边界，确保多个聚合操作的一致性，并统一处理领域事件的持久化。
 
 ### 接口定义
 
@@ -255,6 +251,56 @@ type UnitOfWork interface {
     RegisterNew(aggregate AggregateRoot)
     RegisterDirty(aggregate AggregateRoot)
     RegisterRemoved(aggregate AggregateRoot)
+}
+```
+
+### UoW 实现（含 Outbox Pattern）
+
+```go
+// infrastructure/unit_of_work.go
+type UnitOfWorkImpl struct {
+    db         *sql.DB
+    tx         *sql.Tx
+    aggregates []domain.AggregateRoot
+}
+
+func (uow *UnitOfWorkImpl) Execute(fn func() error) error {
+    // 1. 开启事务
+    tx, err := uow.db.Begin()
+    if err != nil {
+        return err
+    }
+    uow.tx = tx
+    uow.aggregates = nil
+
+    // 2. 执行业务逻辑
+    if err := fn(); err != nil {
+        tx.Rollback()
+        return err
+    }
+
+    // 3. 收集所有聚合根的事件，保存到 outbox 表（同一事务）
+    for _, agg := range uow.aggregates {
+        events := agg.PullEvents()
+        for _, event := range events {
+            payload, _ := json.Marshal(event)
+            _, err := tx.Exec(
+                "INSERT INTO outbox (event_type, aggregate_id, payload, created_at) VALUES (?, ?, ?, NOW())",
+                event.EventName(), agg.ID(), payload,
+            )
+            if err != nil {
+                tx.Rollback()
+                return err
+            }
+        }
+    }
+
+    // 4. 提交事务（业务数据 + 事件一起提交，保证原子性）
+    return tx.Commit()
+}
+
+func (uow *UnitOfWorkImpl) RegisterNew(agg domain.AggregateRoot) {
+    uow.aggregates = append(uow.aggregates, agg)
 }
 ```
 
@@ -277,23 +323,29 @@ func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderRes
             return errors.New("user cannot make purchases")
         }
 
-        // 2. 创建订单聚合根
+        // 2. 创建订单聚合根（聚合根内部记录事件）
         order, err = domain.NewOrder(req.UserID, req.Items)
         if err != nil {
             return err
         }
 
-        // 3. 注册到工作单元（自动保存）
+        // 3. 保存聚合根
+        if err := s.orderRepo.Save(order); err != nil {
+            return err
+        }
+
+        // 4. 注册到工作单元（UoW 会在提交前收集事件）
         s.uow.RegisterNew(order)
 
         return nil
     })
 
-    // Execute自动处理：
+    // Execute 自动处理：
     // - 开始事务（Begin）
-    // - 执行操作
-    // - 成功：保存聚合、发布事件、提交事务
-    // - 失败：回滚事务
+    // - 执行业务操作
+    // - 收集聚合根事件，保存到 outbox 表
+    // - 提交事务（业务数据 + 事件原子提交）
+    // - 失败则回滚事务
 
     if err != nil {
         return nil, err
@@ -302,6 +354,151 @@ func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderRes
     return s.convertToResponse(order), nil
 }
 ```
+
+### Outbox 表结构
+
+```sql
+CREATE TABLE outbox (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    aggregate_id VARCHAR(36) NOT NULL,
+    payload JSON NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    published_at TIMESTAMP NULL,
+    INDEX idx_unpublished (published_at, created_at)
+);
+```
+
+### 事件发布：Message Relay（独立后台服务）
+
+**重要：Application Service 不负责 Publish Event，只负责 Save Event 到 outbox 表。**
+
+实际发布由独立的后台服务（Message Relay）完成，常见实现方式：
+
+| 方式 | 延迟 | 复杂度 | 说明 |
+|-----|------|-------|------|
+| Polling（轮询） | 秒级 | 低 | 简单但有延迟 |
+| CDC（Change Data Capture） | 毫秒级 | 高 | 推荐，如 Debezium |
+| JIT Polling | 可控 | 中 | 混合方式，兼顾延迟和简单性 |
+
+#### JIT Polling 实现（推荐）
+
+```go
+// infrastructure/outbox_processor.go
+type OutboxProcessor struct {
+    db           *sql.DB
+    messageQueue MessageQueue
+    triggerCh    chan struct{}  // 用于接收立即处理通知
+}
+
+func NewOutboxProcessor(db *sql.DB, mq MessageQueue) *OutboxProcessor {
+    return &OutboxProcessor{
+        db:           db,
+        messageQueue: mq,
+        triggerCh:    make(chan struct{}, 1),  // 带缓冲，避免阻塞
+    }
+}
+
+// NotifyNewMessages 通知处理器有新消息，可立即处理（非阻塞）
+func (p *OutboxProcessor) NotifyNewMessages() {
+    select {
+    case p.triggerCh <- struct{}{}:
+    default:  // 已有通知在等待，无需重复
+    }
+}
+
+// Run 启动后台处理循环
+func (p *OutboxProcessor) Run(ctx context.Context) {
+    ticker := time.NewTicker(5 * time.Second)  // 定时兜底
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-p.triggerCh:    // 立即触发
+            p.processOutbox()
+        case <-ticker.C:       // 定时兜底（防止通知丢失）
+            p.processOutbox()
+        }
+    }
+}
+
+func (p *OutboxProcessor) processOutbox() {
+    rows, err := p.db.Query(
+        "SELECT id, event_type, payload FROM outbox WHERE published_at IS NULL ORDER BY created_at LIMIT 100",
+    )
+    if err != nil {
+        log.Printf("Failed to query outbox: %v", err)
+        return
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var id int64
+        var eventType string
+        var payload []byte
+        if err := rows.Scan(&id, &eventType, &payload); err != nil {
+            continue
+        }
+
+        // 发布到消息队列
+        if err := p.messageQueue.Publish(eventType, payload); err != nil {
+            log.Printf("Failed to publish event %d: %v", id, err)
+            continue
+        }
+
+        // 标记为已发布
+        p.db.Exec("UPDATE outbox SET published_at = NOW() WHERE id = ?", id)
+    }
+}
+```
+
+#### 应用服务配合 JIT Polling
+
+```go
+// service/order_service.go
+type OrderApplicationService struct {
+    uow             domain.UnitOfWork
+    orderRepo       domain.OrderRepository
+    outboxProcessor *infrastructure.OutboxProcessor  // 持有处理器引用
+}
+
+func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderResponse, error) {
+    var order *domain.Order
+
+    err := s.uow.Execute(func() error {
+        // ... 业务逻辑（创建订单、保存聚合根）
+        // UoW 会在事务中保存事件到 outbox 表
+        return nil
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    // 事务成功后，通知处理器有新消息（非阻塞，可选）
+    // 注意：这里只是"通知"，不是直接发布
+    s.outboxProcessor.NotifyNewMessages()
+
+    return s.convertToResponse(order), nil
+}
+```
+
+### 职责总结
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  角色                      │  职责                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  聚合根                    │  产生事件，暂存在内存                   │
+│  UoW                       │  事务管理，Save Event 到 outbox 表     │
+│  Application Service       │  业务编排，可通知处理器（不直接发布）   │
+│  Message Relay（独立进程） │  从 outbox 读取，Publish 到消息队列    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**核心原则：Application Service 不直接 Publish Event。**
 
 ---
 
@@ -333,13 +530,13 @@ type OrderRepository interface {
 - 只持久化聚合根（整个聚合一起保存）
 - 提供领域语义的查询接口
 - 保证聚合的原子性操作
-- 在保存后发布聚合根的事件
 
 **不应该做**：
 - 暴露底层存储细节（SQL语句等）
 - 允许绕过聚合根修改内部实体
 - 提供批量操作（如FindAll）
 - 包含业务逻辑
+- 直接发布领域事件（这是 UoW 的职责）
 
 ### 逻辑删除
 
@@ -418,19 +615,19 @@ func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID stri
         return err
     }
 
-    // 3. 持久化（仓储会自动发布事件）
+    // 3. 持久化（仓储只负责持久化，事件由 UoW 保存到 outbox 表）
     return s.orderRepo.Save(ctx, order)
 }
 ```
 
 ### 职责对比
 
-| 特征 | 领域服务 | 应用服务 |
-|-----|---------|---------|
-| **职责** | 跨实体业务规则验证 | 编排业务流程 |
-| **持久化** | 不调用Save | 调用Save |
-| **事件发布** | 不负责 | 由仓储自动发布 |
-| **调用方** | 应用服务 | 表示层（Controller） |
+| 特征       | 领域服务             | 应用服务                       |
+|-----------|---------------------|-------------------------------|
+| **职责**   | 跨实体业务规则验证    | 编排业务流程                   |
+| **持久化** | 不调用 Save          | 调用 Save                      |
+| **事件处理** | 不负责             | 通过 UoW 保存事件到 outbox 表   |
+| **调用方** | 应用服务             | 表示层（Controller）           |
 
 ---
 
@@ -494,11 +691,29 @@ func (e Email) Value() string { return e.value }
 | 领域层 | 业务逻辑、聚合根、领域服务 | 无依赖 |
 | 基础设施层 | 技术实现、仓储、事件发布 | 领域层接口 |
 
-### 事件流转
+### 事件流转（Outbox Pattern）
 
 ```
-聚合根状态变更 → 记录事件 → 仓储Save → 发布事件 → 事件处理器
+聚合根状态变更 → 记录事件到内存
+                    ↓
+              UoW.Execute()
+                    ↓
+    ┌───────────────────────────────┐
+    │ BEGIN TRANSACTION             │
+    │   repo.Save(聚合根)           │
+    │   outbox.Save(事件)           │
+    │ COMMIT                        │
+    └───────────────────────────────┘
+                    ↓
+        后台进程轮询 outbox 表
+                    ↓
+        发布到消息队列 → 事件处理器
 ```
+
+**关键点：**
+- 聚合根产生事件，UoW 统一保存
+- 事件与业务数据同事务落库，保证原子性
+- 后台进程异步发布，保证最终一致性
 
 ### 代码质量检查
 
@@ -550,5 +765,6 @@ type EventStore interface {
 
 - 聚合模式 - 维护一致性边界
 - 仓储模式 - 持久化抽象
-- 工作单元模式 - 事务管理
+- 工作单元模式 - 事务管理 + 事件收集
 - 领域事件模式 - 解耦和异步处理
+- **Outbox Pattern** - 事件与数据原子性落库，后台异步发布

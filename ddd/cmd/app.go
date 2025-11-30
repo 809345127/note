@@ -30,7 +30,9 @@ func NewApp() *App {
 	var userRepo domain.UserRepository
 	var orderRepo domain.OrderRepository
 
-	// 先创建事件发布器（仓储需要它来发布领域事件）
+	// 注意：事件发布器现在只用于事件订阅/处理，不再由仓储使用
+	// 仓储不直接发布事件，事件由 UoW 保存到 outbox 表
+	// 后台 OutboxProcessor 异步发布到消息队列
 	eventPublisher := mocks.NewMockEventPublisher()
 
 	if dbType == "mysql" {
@@ -51,18 +53,19 @@ func NewApp() *App {
 
 		fmt.Println("✅ Connected to MySQL successfully")
 
-		// DDD原则：仓储接收事件发布器，在Save后发布领域事件
-		userRepo = mysql.NewUserRepository(db, eventPublisher)
-		orderRepo = mysql.NewOrderRepository(db, eventPublisher)
+		// 仓储只负责持久化，不负责发布事件
+		userRepo = mysql.NewUserRepository(db)
+		orderRepo = mysql.NewOrderRepository(db)
 	} else {
 		// 使用Mock实现（默认）
 		fmt.Println("💾  Using Mock persistence layer...")
-		// DDD原则：仓储接收事件发布器，在Save后发布领域事件
-		userRepo = mocks.NewMockUserRepository(eventPublisher)
-		orderRepo = mocks.NewMockOrderRepository(eventPublisher)
+		// 仓储只负责持久化，不负责发布事件
+		userRepo = mocks.NewMockUserRepository()
+		orderRepo = mocks.NewMockOrderRepository()
 	}
 
 	// 创建应用服务
+	// 注意：eventPublisher 现在主要用于订阅事件，实际发布由 OutboxProcessor 完成
 	userService := service.NewUserApplicationService(userRepo, orderRepo, eventPublisher)
 	orderService := service.NewOrderApplicationService(orderRepo, userRepo, eventPublisher)
 
@@ -88,18 +91,18 @@ func (a *App) Run(port string) {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-		
+
 		fmt.Println("\nShutting down server...")
-		
+
 		// 这里可以添加清理逻辑
 		fmt.Println("Server stopped")
 		os.Exit(0)
 	}()
-	
+
 	fmt.Printf("Server starting on port %s...\n", port)
 	fmt.Printf("API Documentation: http://localhost:%s/api/v1/docs\n", port)
 	fmt.Printf("Health Check: http://localhost:%s/api/v1/health\n", port)
-	
+
 	if err := a.server.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

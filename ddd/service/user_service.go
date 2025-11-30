@@ -47,7 +47,7 @@ type UserResponse struct {
 }
 
 // CreateUser 创建用户
-// DDD原则：应用服务负责编排业务流程，事件发布由仓储在Save后自动完成
+// DDD原则：应用服务负责编排业务流程，事件由 UoW 保存到 outbox 表，后台 Message Relay 异步发布
 func (s *UserApplicationService) CreateUser(ctx context.Context, req CreateUserRequest) (*UserResponse, error) {
 	// 检查邮箱是否已存在
 	existingUser, _ := s.userRepo.FindByEmail(ctx, req.Email)
@@ -61,7 +61,7 @@ func (s *UserApplicationService) CreateUser(ctx context.Context, req CreateUserR
 		return nil, err
 	}
 
-	// 保存用户（仓储会自动发布聚合根的领域事件）
+	// 保存用户（仓储只负责持久化，事件由 UoW 保存到 outbox 表）
 	if err := s.userRepo.Save(ctx, user); err != nil {
 		return nil, err
 	}

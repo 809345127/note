@@ -5,8 +5,13 @@ Package service 应用层 - 业务流程编排
 1. 接收外部请求（通常来自Controller）
 2. 调用领域服务进行业务规则验证
 3. 调用聚合根方法执行业务操作
-4. 调用仓储保存聚合根（仓储会自动发布事件）
+4. 调用仓储保存聚合根（UoW 会将事件保存到 outbox 表）
 5. 返回结果给调用方
+
+重要：应用服务不直接发布事件！
+- 事件由 UoW 在事务提交前保存到 outbox 表
+- 后台 OutboxProcessor 异步读取 outbox 表并发布到消息队列
+- 这保证了事件与业务数据的原子性
 
 应用服务 vs 领域服务：
 ┌─────────────────────────────────────────────────────────────────┐
@@ -15,6 +20,7 @@ Package service 应用层 - 业务流程编排
 │ - 负责调用Save持久化                                              │
 │ - 管理事务边界（通过UnitOfWork或数据库事务）                         │
 │ - 不包含业务规则（业务规则在领域层）                                 │
+│ - 不直接发布事件（事件由 UoW 保存到 outbox）                        │
 ├─────────────────────────────────────────────────────────────────┤
 │ 领域服务 (Domain Service)                                        │
 │ - 处理跨实体的业务规则                                            │
@@ -74,7 +80,7 @@ func NewOrderApplicationService(
 
 // CreateOrderRequest 创建订单请求DTO
 type CreateOrderRequest struct {
-	UserID string      `json:"user_id" binding:"required"`
+	UserID string             `json:"user_id" binding:"required"`
 	Items  []OrderItemRequest `json:"items" binding:"required,min=1"`
 }
 
@@ -89,13 +95,13 @@ type OrderItemRequest struct {
 
 // OrderResponse 订单响应DTO
 type OrderResponse struct {
-	ID          string           `json:"id"`
-	UserID      string           `json:"user_id"`
+	ID          string              `json:"id"`
+	UserID      string              `json:"user_id"`
 	Items       []OrderItemResponse `json:"items"`
-	TotalAmount MoneyResponse    `json:"total_amount"`
-	Status      string           `json:"status"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
+	TotalAmount MoneyResponse       `json:"total_amount"`
+	Status      string              `json:"status"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
 // OrderItemResponse 订单项响应DTO
@@ -122,8 +128,9 @@ type MoneyResponse struct {
 // 1. 调用领域服务验证业务规则
 // 2. 转换DTO为领域对象
 // 3. 调用聚合根工厂方法创建实体
-// 4. 调用仓储Save保存（仓储会自动发布事件）
+// 4. 调用仓储Save保存（UoW 会将事件保存到 outbox 表）
 // 5. 转换领域对象为Response DTO返回
+// 注意：应用服务不直接发布事件，事件由后台 OutboxProcessor 异步发布
 func (s *OrderApplicationService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*OrderResponse, error) {
 	// 检查用户是否可以下单
 	canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
@@ -157,8 +164,8 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req CreateOrd
 		return nil, err
 	}
 
-	// 发布订单创建事件（事件已通过仓储自动发布）
-	// 如果手动发布，确保不重复发布
+	// 注意：不在这里发布事件！
+	// 事件已由 UoW 保存到 outbox 表，后台 OutboxProcessor 会异步发布
 
 	return s.convertToResponse(order), nil
 }
@@ -230,6 +237,7 @@ func (s *OrderApplicationService) UpdateOrderStatus(ctx context.Context, req Upd
 
 // ProcessOrder 处理订单
 // DDD原则：应用服务负责编排流程（调用领域服务验证、修改状态、保存）
+// 注意：应用服务不直接发布事件
 func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
 	// 1. 通过领域服务验证订单是否可以处理
 	order, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
@@ -237,12 +245,12 @@ func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID stri
 		return err
 	}
 
-	// 2. 执行状态变更（聚合根方法）
+	// 2. 执行状态变更（聚合根方法，内部会记录事件）
 	if err := order.Confirm(); err != nil {
 		return err
 	}
 
-	// 3. 保存（仓储会自动发布领域事件）
+	// 3. 保存（UoW 会将事件保存到 outbox 表，后台异步发布）
 	return s.orderRepo.Save(ctx, order)
 }
 
@@ -264,7 +272,7 @@ func (s *OrderApplicationService) convertToResponse(order *domain.Order) *OrderR
 			},
 		}
 	}
-	
+
 	return &OrderResponse{
 		ID:     order.ID(),
 		UserID: order.UserID(),

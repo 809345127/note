@@ -33,7 +33,7 @@ type OrderRepository interface {
 
 	// Save 保存或更新订单聚合根
 	// 如果order.Version() == 0表示新建，否则为更新
-	// 仓储负责发布聚合根中的领域事件（调用order.PullEvents()）
+	// 仓储只负责持久化，事件由 UoW 收集并保存到 outbox 表
 	Save(ctx context.Context, order *Order) error
 
 	// FindByID 根据ID查找订单聚合根
@@ -68,9 +68,9 @@ type OrderQueryService interface {
 
 // SearchCriteria 通用查询条件
 type SearchCriteria struct {
-	Filters    map[string]interface{}
-	SortBy     string
-	SortOrder  string // ASC or DESC
-	Page       int
-	PageSize   int
+	Filters   map[string]interface{}
+	SortBy    string
+	SortOrder string // ASC or DESC
+	Page      int
+	PageSize  int
 }

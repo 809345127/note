@@ -6,12 +6,23 @@
 2. 需要访问多个仓储的复杂业务计算
 3. 无状态的业务规则
 
+核心原则：领域服务只读不写
+┌─────────────────────────────────────────────────────────────────┐
+│ 操作类型        │ DomainService      │ ApplicationService       │
+├─────────────────────────────────────────────────────────────────┤
+│ 简单查询        │ ⚠️ 可以，建议传入   │ ✅ 查询后传入             │
+│ 业务逻辑查询    │ ✅ 可主动查询       │ ✅ 也可以                 │
+│ Save/Update    │ ❌ 绝对禁止         │ ✅ 唯一负责               │
+│ Delete         │ ❌ 绝对禁止         │ ✅ 唯一负责               │
+└─────────────────────────────────────────────────────────────────┘
+
 与应用服务的区别：
 ┌─────────────────────────────────────────────────────────────────┐
 │ 领域服务 (Domain Service)                                        │
 │ - 位于领域层                                                     │
 │ - 处理跨实体的业务规则                                            │
-│ - 不负责持久化（不调用Save）                                       │
+│ - 可依赖 Repository 接口查询数据                                  │
+│ - 不调用 Save/Update/Delete（只读不写）                           │
 │ - 不负责事务管理                                                  │
 │ - 不发布事件                                                     │
 ├─────────────────────────────────────────────────────────────────┤
@@ -19,7 +30,7 @@
 │ - 位于应用层                                                     │
 │ - 编排业务流程                                                   │
 │ - 调用领域服务进行验证                                            │
-│ - 负责调用Save持久化                                              │
+│ - 负责调用 Save/Update/Delete 持久化                              │
 │ - 管理事务边界                                                   │
 └─────────────────────────────────────────────────────────────────┘
 */
@@ -41,14 +52,14 @@ var (
 
 // UserDomainService 用户领域服务 - 处理跨实体的业务逻辑
 type UserDomainService struct {
-	userRepository UserRepository
+	userRepository  UserRepository
 	orderRepository OrderRepository
 }
 
 // NewUserDomainService 创建用户领域服务
 func NewUserDomainService(userRepo UserRepository, orderRepo OrderRepository) *UserDomainService {
 	return &UserDomainService{
-		userRepository: userRepo,
+		userRepository:  userRepo,
 		orderRepository: orderRepo,
 	}
 }
@@ -100,7 +111,7 @@ func (s *UserDomainService) CalculateUserTotalSpent(ctx context.Context, userID 
 // ============================================================================
 
 // OrderDomainService 订单领域服务
-// DDD原则：领域服务只负责跨实体的业务规则验证，不负责持久化
+// DDD原则：领域服务可依赖 Repository 接口查询数据，但不调用 Save 持久化
 type OrderDomainService struct {
 	userRepository  UserRepository
 	orderRepository OrderRepository

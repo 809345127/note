@@ -4,26 +4,23 @@ import (
 	"context"
 	"ddd-example/domain"
 	"errors"
-	"log"
 	"sync"
 
 	"github.com/google/uuid"
 )
 
 // MockOrderRepository 订单仓储的Mock实现
-// DDD原则：仓储负责聚合根的持久化，并在保存后发布领域事件
+// DDD原则：仓储只负责聚合根的持久化，不负责发布事件
+// 事件发布由 UoW 保存到 outbox 表，后台服务异步发布
 type MockOrderRepository struct {
-	orders         map[string]*domain.Order
-	mu             sync.RWMutex
-	eventPublisher domain.DomainEventPublisher
+	orders map[string]*domain.Order
+	mu     sync.RWMutex
 }
 
 // NewMockOrderRepository 创建Mock订单仓储
-// eventPublisher: 事件发布器，仓储在Save后发布聚合根产生的事件
-func NewMockOrderRepository(eventPublisher domain.DomainEventPublisher) *MockOrderRepository {
+func NewMockOrderRepository() *MockOrderRepository {
 	repo := &MockOrderRepository{
-		orders:         make(map[string]*domain.Order),
-		eventPublisher: eventPublisher,
+		orders: make(map[string]*domain.Order),
 	}
 
 	// 初始化一些测试数据
@@ -112,22 +109,11 @@ func (r *MockOrderRepository) Save(ctx context.Context, order *domain.Order) err
 
 	r.orders[order.ID()] = order
 
-	// DDD原则：仓储在保存成功后发布聚合根产生的领域事件
-	r.publishEvents(order.PullEvents())
+	// 注意：不在仓储中发布事件！
+	// 事件由 UoW 在事务提交前保存到 outbox 表
+	// 后台 OutboxProcessor 异步发布到消息队列
 
 	return nil
-}
-
-// publishEvents 发布领域事件
-func (r *MockOrderRepository) publishEvents(events []domain.DomainEvent) {
-	if r.eventPublisher == nil {
-		return
-	}
-	for _, event := range events {
-		if err := r.eventPublisher.Publish(event); err != nil {
-			log.Printf("[WARN] Failed to publish event %s: %v", event.EventName(), err)
-		}
-	}
 }
 
 func (r *MockOrderRepository) FindByID(ctx context.Context, id string) (*domain.Order, error) {

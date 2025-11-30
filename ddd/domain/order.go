@@ -384,14 +384,14 @@ func (o *Order) UpdatedAt() time.Time { return o.updatedAt }
 // 领域事件管理
 // ============================================================================
 //
-// DDD原则：聚合根负责记录领域事件，仓储负责发布
-// 事件流程：聚合状态变更 → 记录事件 → 仓储Save → 发布事件
+// DDD原则：聚合根负责记录领域事件，UoW 负责保存到 outbox 表
+// 事件流程：聚合状态变更 → 记录事件 → UoW 收集 → 保存到 outbox → Message Relay 异步发布
 
 // PullEvents 获取并清空聚合根的事件列表
 // 这是领域事件模式的标准实践：
 // 1. 聚合根在状态变更时调用 recordEvent() 记录事件
-// 2. 仓储在 Save() 后调用 PullEvents() 获取事件并发布
-// 3. PullEvents 会清空事件列表，避免重复发布
+// 2. UoW 在事务中调用 PullEvents() 获取事件并保存到 outbox 表
+// 3. PullEvents 会清空事件列表，避免重复保存
 func (o *Order) PullEvents() []DomainEvent {
 	events := make([]DomainEvent, len(o.events))
 	copy(events, o.events)

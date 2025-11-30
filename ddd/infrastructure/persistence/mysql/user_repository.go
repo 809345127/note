@@ -5,25 +5,22 @@ import (
 	"database/sql"
 	"ddd-example/domain"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 // UserRepository MySQL用户仓储实现
-// DDD原则：仓储负责聚合根的持久化，并在保存后发布领域事件
+// DDD原则：仓储只负责聚合根的持久化，不负责发布事件
+// 事件发布由 UoW 保存到 outbox 表，后台服务异步发布
 type UserRepository struct {
-	db             *sql.DB
-	eventPublisher domain.DomainEventPublisher
+	db *sql.DB
 }
 
 // NewUserRepository 创建用户仓储
-// eventPublisher: 事件发布器，仓储在Save后发布聚合根产生的事件
-func NewUserRepository(db *sql.DB, eventPublisher domain.DomainEventPublisher) *UserRepository {
+func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{
-		db:             db,
-		eventPublisher: eventPublisher,
+		db: db,
 	}
 }
 
@@ -132,24 +129,11 @@ func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
 		return fmt.Errorf("failed to save user: %w", err)
 	}
 
-	// DDD原则：仓储在保存成功后发布聚合根产生的领域事件
-	r.publishEvents(user.PullEvents())
+	// 注意：不在仓储中发布事件！
+	// 事件由 UoW 在事务提交前保存到 outbox 表
+	// 后台 OutboxProcessor 异步发布到消息队列
 
 	return nil
-}
-
-// publishEvents 发布领域事件
-// 事件发布失败不影响主流程（最终一致性）
-func (r *UserRepository) publishEvents(events []domain.DomainEvent) {
-	if r.eventPublisher == nil {
-		return
-	}
-	for _, event := range events {
-		if err := r.eventPublisher.Publish(event); err != nil {
-			// 记录错误但不中断主流程
-			log.Printf("[WARN] Failed to publish event %s: %v", event.EventName(), err)
-		}
-	}
 }
 
 func (r *UserRepository) NextIdentity() string {

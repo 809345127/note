@@ -15,21 +15,22 @@ import (
 //
 // 使用模式：
 // uow := unitOfWorkFactory.New()
-// err := uow.Execute(func() error {
-//     // 加载聚合根
-//     user, _ := userRepo.FindByID(userID)
-//     order, _ := orderRepo.FindByID(orderID)
 //
-//     // 执行业务操作
-//     user.Deactivate()
-//     order.Cancel()
+//	err := uow.Execute(func() error {
+//	    // 加载聚合根
+//	    user, _ := userRepo.FindByID(userID)
+//	    order, _ := orderRepo.FindByID(orderID)
 //
-//     // 保存（在工作单元执行时自动处理）
-//     uow.RegisterDirty(user)
-//     uow.RegisterDirty(order)
+//	    // 执行业务操作
+//	    user.Deactivate()
+//	    order.Cancel()
 //
-//     return nil
-// })
+//	    // 保存（在工作单元执行时自动处理）
+//	    uow.RegisterDirty(user)
+//	    uow.RegisterDirty(order)
+//
+//	    return nil
+//	})
 type UnitOfWork interface {
 	// Execute 在事务中执行业务操作
 	// 自动处理begin、commit和rollback
@@ -69,28 +70,37 @@ type TransactionManager interface {
 	InTransaction() bool
 }
 
+// OutboxRepository Outbox 仓储接口
+// 用于保存领域事件到 outbox 表，与业务数据同事务提交
+type OutboxRepository interface {
+	// SaveEvent 保存事件到 outbox 表（在当前事务中）
+	SaveEvent(ctx context.Context, event DomainEvent) error
+}
+
 // AggregateTracker 聚合根跟踪器
+// 职责：跟踪聚合根变更，保存到仓储，收集事件到 outbox
+// 注意：不直接发布事件，事件由后台 OutboxProcessor 异步发布
 type AggregateTracker struct {
-	mu          sync.RWMutex
-	new         map[string]AggregateRoot     // 新建的聚合
-	dirty       map[string]AggregateRoot     // 修改的聚合
-	removed     map[string]AggregateRoot     // 删除的聚合
-	clean       map[string]AggregateRoot     // 干净的聚合
-	userRepo    UserRepository
-	orderRepo   OrderRepository
-	publisher   DomainEventPublisher
+	mu         sync.RWMutex
+	new        map[string]AggregateRoot // 新建的聚合
+	dirty      map[string]AggregateRoot // 修改的聚合
+	removed    map[string]AggregateRoot // 删除的聚合
+	clean      map[string]AggregateRoot // 干净的聚合
+	userRepo   UserRepository
+	orderRepo  OrderRepository
+	outboxRepo OutboxRepository // 用于保存事件到 outbox 表
 }
 
 // NewAggregateTracker 创建聚合根跟踪器
-func NewAggregateTracker(userRepo UserRepository, orderRepo OrderRepository, publisher DomainEventPublisher) *AggregateTracker {
+func NewAggregateTracker(userRepo UserRepository, orderRepo OrderRepository, outboxRepo OutboxRepository) *AggregateTracker {
 	return &AggregateTracker{
-		new:       make(map[string]AggregateRoot),
-		dirty:     make(map[string]AggregateRoot),
-		removed:   make(map[string]AggregateRoot),
-		clean:     make(map[string]AggregateRoot),
-		userRepo:  userRepo,
-		orderRepo: orderRepo,
-		publisher: publisher,
+		new:        make(map[string]AggregateRoot),
+		dirty:      make(map[string]AggregateRoot),
+		removed:    make(map[string]AggregateRoot),
+		clean:      make(map[string]AggregateRoot),
+		userRepo:   userRepo,
+		orderRepo:  orderRepo,
+		outboxRepo: outboxRepo,
 	}
 }
 
@@ -200,7 +210,8 @@ func (t *AggregateTracker) ProcessRemoved(ctx context.Context) error {
 	return nil
 }
 
-// saveAggregate 保存聚合根并发布事件
+// saveAggregate 保存聚合根并将事件保存到 outbox 表
+// 注意：不直接发布事件，事件由后台 OutboxProcessor 异步发布
 func (t *AggregateTracker) saveAggregate(ctx context.Context, aggregate AggregateRoot) error {
 	// 根据聚合根的类型调用对应的仓储
 	// 这里使用类型断言检查聚合根的类型
@@ -210,9 +221,11 @@ func (t *AggregateTracker) saveAggregate(ctx context.Context, aggregate Aggregat
 		if err := t.userRepo.Save(ctx, user); err != nil {
 			return err
 		}
-		// 发布领域事件
+		// 保存事件到 outbox 表（同一事务）
 		events := user.PullEvents()
-		t.publishEvents(events)
+		if err := t.saveEventsToOutbox(ctx, events); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -221,9 +234,11 @@ func (t *AggregateTracker) saveAggregate(ctx context.Context, aggregate Aggregat
 		if err := t.orderRepo.Save(ctx, order); err != nil {
 			return err
 		}
-		// 发布领域事件
+		// 保存事件到 outbox 表（同一事务）
 		events := order.PullEvents()
-		t.publishEvents(events)
+		if err := t.saveEventsToOutbox(ctx, events); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -245,14 +260,24 @@ func (t *AggregateTracker) removeAggregate(ctx context.Context, aggregate Aggreg
 	}
 }
 
-// publishEvents 发布领域事件
-func (t *AggregateTracker) publishEvents(events []DomainEvent) {
+// saveEventsToOutbox 保存事件到 outbox 表
+// 事件与业务数据在同一事务中提交，保证原子性
+// 后台 OutboxProcessor 会异步读取 outbox 表并发布到消息队列
+func (t *AggregateTracker) saveEventsToOutbox(ctx context.Context, events []DomainEvent) error {
+	if t.outboxRepo == nil {
+		// 如果没有配置 outbox 仓储，仅打印日志（开发/测试环境）
+		for _, event := range events {
+			fmt.Printf("[OUTBOX] Would save event: %s for aggregate %s\n", event.EventName(), event.GetAggregateID())
+		}
+		return nil
+	}
+
 	for _, event := range events {
-		if err := t.publisher.Publish(event); err != nil {
-			// 记录错误但不中断流程（事件发布失败不影响主流程）
-			fmt.Printf("Failed to publish event %s: %v\n", event.EventName(), err)
+		if err := t.outboxRepo.SaveEvent(ctx, event); err != nil {
+			return fmt.Errorf("failed to save event %s to outbox: %w", event.EventName(), err)
 		}
 	}
+	return nil
 }
 
 // Clear 清空跟踪器（应该在事务成功提交后调用）

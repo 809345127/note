@@ -1,19 +1,20 @@
 package api
 
 import (
-	"ddd-example/service"
 	"net/http"
+
+	orderapp "ddd-example/application/order"
 
 	"github.com/gin-gonic/gin"
 )
 
 // OrderController 订单控制器
 type OrderController struct {
-	orderService *service.OrderApplicationService
+	orderService *orderapp.ApplicationService
 }
 
 // NewOrderController 创建订单控制器
-func NewOrderController(orderService *service.OrderApplicationService) *OrderController {
+func NewOrderController(orderService *orderapp.ApplicationService) *OrderController {
 	return &OrderController{
 		orderService: orderService,
 	}
@@ -33,7 +34,7 @@ func (c *OrderController) RegisterRoutes(router *gin.RouterGroup) {
 
 // CreateOrder 创建订单
 func (c *OrderController) CreateOrder(ctx *gin.Context) {
-	var req service.CreateOrderRequest
+	var req orderapp.CreateOrderRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
@@ -94,14 +95,14 @@ func (c *OrderController) UpdateOrderStatus(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "Order ID is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	var req UpdateOrderStatusRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
 	}
-	
-	updateReq := service.UpdateOrderStatusRequest{
+
+	updateReq := orderapp.UpdateOrderStatusRequest{
 		OrderID: orderID,
 		Status:  req.Status,
 	}

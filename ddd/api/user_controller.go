@@ -1,19 +1,20 @@
 package api
 
 import (
-	"ddd-example/service"
 	"net/http"
+
+	userapp "ddd-example/application/user"
 
 	"github.com/gin-gonic/gin"
 )
 
 // UserController 用户控制器
 type UserController struct {
-	userService *service.UserApplicationService
+	userService *userapp.ApplicationService
 }
 
 // NewUserController 创建用户控制器
-func NewUserController(userService *service.UserApplicationService) *UserController {
+func NewUserController(userService *userapp.ApplicationService) *UserController {
 	return &UserController{
 		userService: userService,
 	}
@@ -33,7 +34,7 @@ func (c *UserController) RegisterRoutes(router *gin.RouterGroup) {
 
 // CreateUser 创建用户
 func (c *UserController) CreateUser(ctx *gin.Context) {
-	var req service.CreateUserRequest
+	var req userapp.CreateUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
@@ -72,7 +73,7 @@ func (c *UserController) GetAllUsers(ctx *gin.Context) {
 		HandleError(ctx, err, "Failed to get users", http.StatusInternalServerError)
 		return
 	}
-	
+
 	HandleSuccess(ctx, users, "Users retrieved successfully")
 }
 
@@ -88,14 +89,14 @@ func (c *UserController) UpdateUserStatus(ctx *gin.Context) {
 		HandleError(ctx, gin.Error{}, "User ID is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	var req UpdateUserStatusRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
 		return
 	}
-	
-	updateReq := service.UpdateUserStatusRequest{
+
+	updateReq := userapp.UpdateUserStatusRequest{
 		UserID: userID,
 		Active: req.Active,
 	}
@@ -116,7 +117,7 @@ func (c *UserController) GetUserTotalSpent(ctx *gin.Context) {
 		return
 	}
 
-	req := service.GetUserTotalSpentRequest{UserID: userID}
+	req := userapp.GetUserTotalSpentRequest{UserID: userID}
 	response, err := c.userService.GetUserTotalSpent(ctx.Request.Context(), req)
 	if err != nil {
 		HandleError(ctx, err, "Failed to get user total spent", http.StatusInternalServerError)

@@ -1,31 +1,14 @@
-package domain
+package user
 
 import (
-	"errors"
 	"time"
+
+	"ddd-example/domain/shared"
 
 	"github.com/google/uuid"
 )
 
-// ============================================================================
-// 领域错误定义
-// ============================================================================
-//
-// DDD原则：领域层定义业务相关的错误类型
-// 这些错误表达业务规则的违反，而非技术错误
-
-var (
-	ErrInvalidEmail      = errors.New("invalid email format")
-	ErrInvalidName       = errors.New("name cannot be empty")
-	ErrInvalidAge        = errors.New("age must be between 0 and 150")
-	ErrUserNotActive     = errors.New("user is not active")
-	ErrInsufficientFunds = errors.New("insufficient funds")
-)
-
-// ============================================================================
-// User 聚合根
-// ============================================================================
-//
+// User 用户聚合根
 // User是一个简单的聚合根，没有包含内部实体
 // 与Order不同，User聚合内只有User自身，没有子实体
 //
@@ -33,8 +16,6 @@ var (
 // 1. 所有字段私有，通过方法暴露行为
 // 2. 包含版本号用于乐观锁
 // 3. 包含事件列表用于记录领域事件
-
-// User 用户聚合根
 type User struct {
 	id        string
 	name      string
@@ -45,7 +26,7 @@ type User struct {
 	createdAt time.Time
 	updatedAt time.Time
 
-	events []DomainEvent
+	events []shared.DomainEvent
 }
 
 // NewUser 创建新用户实体
@@ -73,7 +54,7 @@ func NewUser(name string, email string, age int) (*User, error) {
 		version:   0,
 		createdAt: now,
 		updatedAt: now,
-		events:    make([]DomainEvent, 0),
+		events:    make([]shared.DomainEvent, 0),
 	}
 
 	// 记录领域事件
@@ -129,31 +110,31 @@ func (u *User) CanMakePurchase() bool {
 // ============================================================================
 //
 // DDD原则：字段私有，通过getter暴露只读访问
-func (u *User) ID() string        { return u.id }
-func (u *User) Name() string      { return u.name }
-func (u *User) Email() Email      { return u.email }
-func (u *User) Age() int          { return u.age }
-func (u *User) IsActive() bool    { return u.isActive }
-func (u *User) Version() int      { return u.version }
+func (u *User) ID() string           { return u.id }
+func (u *User) Name() string         { return u.name }
+func (u *User) Email() Email         { return u.email }
+func (u *User) Age() int             { return u.age }
+func (u *User) IsActive() bool       { return u.isActive }
+func (u *User) Version() int         { return u.version }
 func (u *User) CreatedAt() time.Time { return u.createdAt }
 func (u *User) UpdatedAt() time.Time { return u.updatedAt }
 
 // PullEvents 获取并清空聚合根的事件列表
-func (u *User) PullEvents() []DomainEvent {
-	events := make([]DomainEvent, len(u.events))
+func (u *User) PullEvents() []shared.DomainEvent {
+	events := make([]shared.DomainEvent, len(u.events))
 	copy(events, u.events)
-	u.events = make([]DomainEvent, 0)
+	u.events = make([]shared.DomainEvent, 0)
 	return events
 }
 
-func (u *User) recordEvent(event DomainEvent) {
+func (u *User) recordEvent(event shared.DomainEvent) {
 	u.events = append(u.events, event)
 }
 
-// UserReconstructionDTO 用户重建数据传输对象
+// ReconstructionDTO 用户重建数据传输对象
 // 仅限于仓储层使用，用于从数据库重建User聚合根
 // ⚠️ 注意：此DTO仅应在仓储实现中使用，不应在应用层调用
-type UserReconstructionDTO struct {
+type ReconstructionDTO struct {
 	ID        string
 	Name      string
 	Email     string
@@ -164,10 +145,10 @@ type UserReconstructionDTO struct {
 	UpdatedAt time.Time
 }
 
-// RebuildUserFromDTO 从DTO重建User聚合根
+// RebuildFromDTO 从DTO重建User聚合根
 // 这是一个工厂方法，专门用于仓储层重建聚合根
 // ⚠️ 注意：此方法仅应在仓储实现中使用，不应在应用层调用
-func RebuildUserFromDTO(dto UserReconstructionDTO) *User {
+func RebuildFromDTO(dto ReconstructionDTO) *User {
 	return &User{
 		id:        dto.ID,
 		name:      dto.Name,
@@ -177,6 +158,9 @@ func RebuildUserFromDTO(dto UserReconstructionDTO) *User {
 		version:   dto.Version,
 		createdAt: dto.CreatedAt,
 		updatedAt: dto.UpdatedAt,
-		events:    []DomainEvent{},
+		events:    []shared.DomainEvent{},
 	}
 }
+
+// 编译时检查 User 实现了 AggregateRoot 接口
+var _ shared.AggregateRoot = (*User)(nil)

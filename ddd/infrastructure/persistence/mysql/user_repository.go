@@ -2,162 +2,88 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
-	"ddd-example/domain"
-	"fmt"
-	"time"
+	"errors"
+
+	"ddd-example/domain/user"
+	"ddd-example/infrastructure/persistence/mysql/po"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// UserRepository MySQL用户仓储实现
+// UserRepository 用户仓储的MySQL/GORM实现
 // DDD原则：仓储只负责聚合根的持久化，不负责发布事件
-// 事件发布由 UoW 保存到 outbox 表，后台服务异步发布
+// GORM使用规范：禁止使用关联功能，保持DDD聚合边界
 type UserRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewUserRepository 创建用户仓储
-func NewUserRepository(db *sql.DB) *UserRepository {
-	return &UserRepository{
-		db: db,
-	}
+func NewUserRepository(db *gorm.DB) *UserRepository {
+	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) FindByID(ctx context.Context, id string) (*domain.User, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, email, age, is_active, version, created_at, updated_at
-		FROM users
-		WHERE id = ?
-	`, id)
-
-	var userID, name, email string
-	var age int
-	var isActive bool
-	var version int
-	var createdAt, updatedAt time.Time
-
-	err := row.Scan(
-		&userID, &name, &email, &age,
-		&isActive, &version, &createdAt, &updatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found: %w", domain.ErrUserNotFound)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan user: %w", err)
-	}
-
-	// 使用DTO重建User
-	dto := domain.UserReconstructionDTO{
-		ID:        userID,
-		Name:      name,
-		Email:     email,
-		Age:       age,
-		IsActive:  isActive,
-		Version:   version,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-	}
-
-	return domain.RebuildUserFromDTO(dto), nil
-}
-
-func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
-	row, err := r.db.QueryContext(ctx, `
-		SELECT id, name, email, age, is_active, version, created_at, updated_at
-		FROM users
-		WHERE email = ?
-		LIMIT 1
-	`, email)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query user: %w", err)
-	}
-	defer row.Close()
-
-	if !row.Next() {
-		return nil, fmt.Errorf("user not found: %w", domain.ErrUserNotFound)
-	}
-
-	var userID, name, emailStr string
-	var age int
-	var isActive bool
-	var version int
-	var createdAt, updatedAt time.Time
-
-	err = row.Scan(
-		&userID, &name, &emailStr, &age,
-		&isActive, &version, &createdAt, &updatedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan user: %w", err)
-	}
-
-	// 使用DTO重建User
-	dto := domain.UserReconstructionDTO{
-		ID:        userID,
-		Name:      name,
-		Email:     emailStr,
-		Age:       age,
-		IsActive:  isActive,
-		Version:   version,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-	}
-
-	return domain.RebuildUserFromDTO(dto), nil
-}
-
-func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
-	email := user.Email()
-
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO users (id, name, email, age, is_active, version, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			name = VALUES(name),
-			email = VALUES(email),
-			age = VALUES(age),
-			is_active = VALUES(is_active),
-			version = VALUES(version) + 1,
-			updated_at = VALUES(updated_at)
-	`,
-		user.ID(), user.Name(), email.Value(), user.Age(),
-		user.IsActive(), user.Version(), user.CreatedAt(), user.UpdatedAt())
-
-	if err != nil {
-		return fmt.Errorf("failed to save user: %w", err)
-	}
-
-	// 注意：不在仓储中发布事件！
-	// 事件由 UoW 在事务提交前保存到 outbox 表
-	// 后台 OutboxProcessor 异步发布到消息队列
-
-	return nil
-}
-
+// NextIdentity 生成新的用户ID
 func (r *UserRepository) NextIdentity() string {
-	return uuid.New().String()
+	return "user-" + uuid.New().String()
 }
 
-// Remove 逻辑删除用户
+// Save 保存用户（创建或更新）
+func (r *UserRepository) Save(ctx context.Context, u *user.User) error {
+	userPO := po.FromUserDomain(u)
+
+	// 使用 Save 方法，GORM 会根据主键判断是 Create 还是 Update
+	result := r.db.WithContext(ctx).Save(userPO)
+	return result.Error
+}
+
+// FindByID 根据ID查找用户
+func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, error) {
+	var userPO po.UserPO
+
+	result := r.db.WithContext(ctx).First(&userPO, "id = ?", id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
+		return nil, result.Error
+	}
+
+	return userPO.ToDomain(), nil
+}
+
+// FindByEmail 根据邮箱查找用户
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.User, error) {
+	var userPO po.UserPO
+
+	result := r.db.WithContext(ctx).First(&userPO, "email = ?", email)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
+		return nil, result.Error
+	}
+
+	return userPO.ToDomain(), nil
+}
+
+// Remove 删除用户（逻辑删除：标记为不活跃）
 // DDD原则：推荐逻辑删除而非物理删除，保留业务历史
 func (r *UserRepository) Remove(ctx context.Context, id string) error {
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE users SET is_active = false, updated_at = NOW() WHERE id = ?
-	`, id)
-	if err != nil {
-		return fmt.Errorf("failed to remove user: %w", err)
-	}
+	result := r.db.WithContext(ctx).
+		Model(&po.UserPO{}).
+		Where("id = ?", id).
+		Update("is_active", false)
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get affected rows: %w", err)
+	if result.Error != nil {
+		return result.Error
 	}
-
-	if affected == 0 {
-		return fmt.Errorf("user not found: %w", domain.ErrUserNotFound)
+	if result.RowsAffected == 0 {
+		return errors.New("user not found")
 	}
 
 	return nil
 }
+
+// 编译时检查接口实现
+var _ user.Repository = (*UserRepository)(nil)

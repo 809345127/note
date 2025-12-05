@@ -1,25 +1,26 @@
 package mocks
 
 import (
-	"ddd-example/domain"
 	"fmt"
 	"sync"
+
+	"ddd-example/domain/shared"
 )
 
 // MockEventPublisher 领域事件发布器的Mock实现
 type MockEventPublisher struct {
-	handlers map[string][]domain.EventHandler
+	handlers map[string][]shared.EventHandler
 	mu       sync.RWMutex
 }
 
 // NewMockEventPublisher 创建Mock事件发布器
 func NewMockEventPublisher() *MockEventPublisher {
 	return &MockEventPublisher{
-		handlers: make(map[string][]domain.EventHandler),
+		handlers: make(map[string][]shared.EventHandler),
 	}
 }
 
-func (p *MockEventPublisher) Publish(event domain.DomainEvent) error {
+func (p *MockEventPublisher) Publish(event shared.DomainEvent) error {
 	p.mu.RLock()
 	handlers, exists := p.handlers[event.EventName()]
 	p.mu.RUnlock()
@@ -39,7 +40,7 @@ func (p *MockEventPublisher) Publish(event domain.DomainEvent) error {
 	return nil
 }
 
-func (p *MockEventPublisher) Subscribe(eventName string, handler domain.EventHandler) error {
+func (p *MockEventPublisher) Subscribe(eventName string, handler shared.EventHandler) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -55,7 +56,7 @@ func (p *MockEventPublisher) Subscribe(eventName string, handler domain.EventHan
 }
 
 // Unsubscribe 取消订阅
-func (p *MockEventPublisher) Unsubscribe(eventName string, handler domain.EventHandler) error {
+func (p *MockEventPublisher) Unsubscribe(eventName string, handler shared.EventHandler) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -75,7 +76,7 @@ func (p *MockEventPublisher) Unsubscribe(eventName string, handler domain.EventH
 }
 
 // MockHandler Mock事件处理器
-type MockHandler struct{
+type MockHandler struct {
 	name string
 }
 
@@ -85,7 +86,7 @@ func NewMockHandler(name string) *MockHandler {
 }
 
 // Handle 处理事件（仅用于测试）
-func (h *MockHandler) Handle(event domain.DomainEvent) error {
+func (h *MockHandler) Handle(event shared.DomainEvent) error {
 	return nil
 }
 

@@ -1,10 +1,17 @@
-package domain
+package shared
 
 import (
 	"fmt"
 	"sync"
 	"time"
 )
+
+// DomainEvent 领域事件接口
+type DomainEvent interface {
+	EventName() string
+	OccurredOn() time.Time
+	GetAggregateID() string
+}
 
 // DomainEventPublisher 领域事件发布器接口
 // DDD原则：领域层定义接口，基础设施层提供实现
@@ -43,18 +50,18 @@ type EventPublishOptions struct {
 
 // EventSubscription 事件订阅
 type EventSubscription struct {
-	ID        string          `json:"id"`
-	EventName string          `json:"event_name"`
-	Handler   EventHandler    `json:"-"`
-	CreatedAt time.Time       `json:"created_at"`
-	IsActive  bool            `json:"is_active"`
+	ID        string       `json:"id"`
+	EventName string       `json:"event_name"`
+	Handler   EventHandler `json:"-"`
+	CreatedAt time.Time    `json:"created_at"`
+	IsActive  bool         `json:"is_active"`
 }
 
 // EventPublishResult 事件发布结果
 type EventPublishResult struct {
-	EventName string `json:"event_name"`
-	Success   bool   `json:"success"`
-	Message   string `json:"message,omitempty"`
+	EventName   string    `json:"event_name"`
+	Success     bool      `json:"success"`
+	Message     string    `json:"message,omitempty"`
 	PublishedAt time.Time `json:"published_at"`
 }
 
@@ -83,11 +90,9 @@ func ValidateEvent(event DomainEvent) error {
 
 // EventBus 内存事件总线实现
 type EventBus struct {
-	handlers map[string][]EventHandler
-	mu       sync.RWMutex
-
-	// 发布历史（调试用）
-	history []EventPublishResult
+	handlers  map[string][]EventHandler
+	mu        sync.RWMutex
+	history   []EventPublishResult
 	muHistory sync.Mutex
 }
 
@@ -116,24 +121,19 @@ func (bus *EventBus) Publish(event DomainEvent) error {
 	}
 
 	if exists && len(handlers) > 0 {
-		// 执行所有处理器（同步）
-		// 生产环境应该考虑使用异步处理
 		for _, handler := range handlers {
 			if err := handler.Handle(event); err != nil {
 				result.Success = false
 				result.Message = fmt.Sprintf("handler %s failed: %v", handler.Name(), err)
-				// 继续执行其他处理器
 			}
 		}
 	} else {
 		result.Message = "no handlers registered for this event"
 	}
 
-	// 记录发布历史
 	bus.muHistory.Lock()
 	bus.history = append(bus.history, result)
 	if len(bus.history) > 1000 {
-		// 限制历史记录长度
 		bus.history = bus.history[len(bus.history)-1000:]
 	}
 	bus.muHistory.Unlock()
@@ -154,7 +154,6 @@ func (bus *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
-	// 检查是否已经订阅
 	for _, h := range bus.handlers[eventName] {
 		if h.Name() == handler.Name() {
 			return fmt.Errorf("handler %s already subscribed to %s", handler.Name(), eventName)
@@ -175,7 +174,6 @@ func (bus *EventBus) Unsubscribe(eventName string, handler EventHandler) error {
 		return nil
 	}
 
-	// 移除处理器
 	for i, h := range handlers {
 		if h.Name() == handler.Name() {
 			bus.handlers[eventName] = append(handlers[:i], handlers[i+1:]...)
@@ -222,6 +220,7 @@ func (h *FuncHandler) Handle(event DomainEvent) error {
 func (h *FuncHandler) Name() string {
 	return h.name
 }
+
 // MockEventPublisher Mock事件发布器
 type MockEventPublisher struct {
 	handlers map[string][]EventHandler
@@ -246,12 +245,10 @@ func (p *MockEventPublisher) Publish(event DomainEvent) error {
 
 	if exists {
 		for _, handler := range handlers {
-			// 异步处理（模拟真实消息队列行为）
 			go handler.Handle(event)
 		}
 	}
 
-	// 模拟日志输出
 	fmt.Printf("[EVENT PUBLISHED] %s at %s for aggregate %s\n",
 		event.EventName(),
 		event.OccurredOn().Format("2006-01-02 15:04:05"),
@@ -319,16 +316,4 @@ func NewEventPublishAdapter(publisher DomainEventPublisher) *EventPublishAdapter
 	return &EventPublishAdapter{
 		publisher: publisher,
 	}
-}
-
-// PublishUserCreatedEvent 发布用户创建事件
-func (a *EventPublishAdapter) PublishUserCreatedEvent(userID, name, email string) error {
-	event := NewUserCreatedEvent(userID, name, email)
-	return a.publisher.Publish(event)
-}
-
-// PublishOrderPlacedEvent 发布订单创建事件
-func (a *EventPublishAdapter) PublishOrderPlacedEvent(orderID, userID string, totalAmount Money) error {
-	event := NewOrderPlacedEvent(orderID, userID, totalAmount)
-	return a.publisher.Publish(event)
 }

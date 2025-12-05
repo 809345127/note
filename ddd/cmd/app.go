@@ -1,114 +1,178 @@
 package cmd
 
 import (
-	"fmt"
-	"log"
+	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"ddd-example/api"
-	"ddd-example/domain"
+	orderapp "ddd-example/application/order"
+	userapp "ddd-example/application/user"
+	"ddd-example/config"
+	"ddd-example/domain/order"
+	"ddd-example/domain/user"
 	"ddd-example/infrastructure/persistence/mocks"
 	"ddd-example/infrastructure/persistence/mysql"
-	"ddd-example/service"
+	"ddd-example/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // App 应用程序结构体
 type App struct {
+	config *config.Config
 	router *api.Router
-	server *gin.Engine
+	server *http.Server
+	db     *gorm.DB
 }
 
 // NewApp 创建应用程序
-func NewApp() *App {
-	// 根据环境变量选择仓储实现
-	dbType := os.Getenv("DB_TYPE")
+func NewApp(cfg *config.Config) *App {
+	// 初始化日志
+	if err := logger.Init(&cfg.Log); err != nil {
+		logger.Fatal().Err(err).Msg("Failed to initialize logger")
+	}
 
-	var userRepo domain.UserRepository
-	var orderRepo domain.OrderRepository
+	logger.Info().
+		Str("app", cfg.App.Name).
+		Str("version", cfg.App.Version).
+		Str("env", cfg.App.Env).
+		Msg("Starting application")
 
-	// 注意：事件发布器现在只用于事件订阅/处理，不再由仓储使用
-	// 仓储不直接发布事件，事件由 UoW 保存到 outbox 表
-	// 后台 OutboxProcessor 异步发布到消息队列
+	var userRepo user.Repository
+	var orderRepo order.Repository
+	var db *gorm.DB
+
+	// 事件发布器（用于事件订阅/处理）
 	eventPublisher := mocks.NewMockEventPublisher()
 
-	if dbType == "mysql" {
-		// 使用MySQL实现
-		fmt.Println("🗄️  Using MySQL persistence layer...")
-		config := mysql.NewConfig()
-		config.Port = "3307" // 使用Docker MySQL的端口
+	// 根据配置选择仓储实现
+	if cfg.Database.Type == "mysql" {
+		logger.Info().Msg("Using MySQL/GORM persistence layer")
 
-		db, err := config.Connect()
+		mysqlConfig := &mysql.Config{
+			Host:            cfg.Database.Host,
+			Port:            cfg.Database.Port,
+			Username:        cfg.Database.Username,
+			Password:        cfg.Database.Password,
+			Database:        cfg.Database.Database,
+			MaxOpenConns:    cfg.Database.MaxOpenConns,
+			MaxIdleConns:    cfg.Database.MaxIdleConns,
+			ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
+		}
+
+		var err error
+		db, err = mysqlConfig.Connect()
 		if err != nil {
-			log.Fatalf("❌ Failed to connect to MySQL: %v", err)
+			logger.Fatal().Err(err).Msg("Failed to connect to MySQL")
 		}
 
-		// 测试数据库连接
-		if err := db.Ping(); err != nil {
-			log.Fatalf("❌ Failed to ping MySQL: %v", err)
+		// 测试连接
+		sqlDB, err := db.DB()
+		if err != nil {
+			logger.Fatal().Err(err).Msg("Failed to get underlying sql.DB")
+		}
+		if err := sqlDB.Ping(); err != nil {
+			logger.Fatal().Err(err).Msg("Failed to ping MySQL")
 		}
 
-		fmt.Println("✅ Connected to MySQL successfully")
+		logger.Info().Msg("Connected to MySQL successfully")
 
-		// 仓储只负责持久化，不负责发布事件
+		// 开发环境自动迁移
+		if cfg.IsDevelopment() {
+			if err := mysql.AutoMigrate(db); err != nil {
+				logger.Fatal().Err(err).Msg("Failed to auto migrate")
+			}
+		}
+
 		userRepo = mysql.NewUserRepository(db)
 		orderRepo = mysql.NewOrderRepository(db)
 	} else {
-		// 使用Mock实现（默认）
-		fmt.Println("💾  Using Mock persistence layer...")
-		// 仓储只负责持久化，不负责发布事件
+		logger.Info().Msg("Using Mock persistence layer")
 		userRepo = mocks.NewMockUserRepository()
 		orderRepo = mocks.NewMockOrderRepository()
 	}
 
 	// 创建应用服务
-	// 注意：eventPublisher 现在主要用于订阅事件，实际发布由 OutboxProcessor 完成
-	userService := service.NewUserApplicationService(userRepo, orderRepo, eventPublisher)
-	orderService := service.NewOrderApplicationService(orderRepo, userRepo, eventPublisher)
+	userService := userapp.NewApplicationService(userRepo, orderRepo, eventPublisher)
+	orderService := orderapp.NewApplicationService(orderRepo, userRepo, eventPublisher)
 
-	// 创建控制器
-	healthController := api.NewHealthController()
+	// 创建控制器（健康检查需要传入sql.DB用于检查连接）
+	var sqlDB interface{}
+	if db != nil {
+		sqlDB, _ = db.DB()
+	}
+	healthController := api.NewHealthController(cfg, sqlDB)
 	userController := api.NewUserController(userService)
 	orderController := api.NewOrderController(orderService)
 
 	// 创建路由
-	router := api.NewRouter(healthController, userController, orderController)
+	router := api.NewRouter(cfg, healthController, userController, orderController)
 	router.SetupRoutes()
 
+	// 创建HTTP服务器
+	server := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      router.GetEngine(),
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
 	return &App{
+		config: cfg,
 		router: router,
-		server: router.GetEngine(),
+		server: server,
+		db:     db,
 	}
 }
 
 // Run 运行应用程序
-func (a *App) Run(port string) {
-	// 设置优雅关闭
+func (a *App) Run() error {
+	// 启动服务器
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
+		logger.Info().
+			Str("port", a.config.Server.Port).
+			Str("health", "http://localhost:"+a.config.Server.Port+"/api/v1/health").
+			Msg("Server started")
 
-		fmt.Println("\nShutting down server...")
-
-		// 这里可以添加清理逻辑
-		fmt.Println("Server stopped")
-		os.Exit(0)
+		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal().Err(err).Msg("Failed to start server")
+		}
 	}()
 
-	fmt.Printf("Server starting on port %s...\n", port)
-	fmt.Printf("API Documentation: http://localhost:%s/api/v1/docs\n", port)
-	fmt.Printf("Health Check: http://localhost:%s/api/v1/health\n", port)
+	// 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	if err := a.server.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	logger.Info().Msg("Shutting down server...")
+
+	// 优雅关闭
+	ctx, cancel := context.WithTimeout(context.Background(), a.config.Server.ShutdownTimeout)
+	defer cancel()
+
+	if err := a.server.Shutdown(ctx); err != nil {
+		logger.Error().Err(err).Msg("Server forced to shutdown")
+		return err
 	}
+
+	// 关闭数据库连接
+	if a.db != nil {
+		sqlDB, err := a.db.DB()
+		if err == nil {
+			if err := sqlDB.Close(); err != nil {
+				logger.Error().Err(err).Msg("Error closing database connection")
+			}
+		}
+	}
+
+	logger.Info().Msg("Server exited properly")
+	return nil
 }
 
 // GetServer 获取服务器实例（用于测试）
-func (a *App) GetServer() *gin.Engine {
+func (a *App) GetServer() *http.Server {
 	return a.server
 }

@@ -1,24 +1,32 @@
 package main
 
 import (
-	"ddd-example/cmd"
 	"flag"
 	"fmt"
+	"os"
+
+	"ddd-example/cmd"
+	"ddd-example/config"
 )
 
 func main() {
 	// 解析命令行参数
-	var port string
-	flag.StringVar(&port, "port", "8080", "Server port")
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "Path to config file")
 	flag.Parse()
-	
+
+	// 加载配置
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 创建并运行应用
-	app := cmd.NewApp()
-	
-	fmt.Println("🚀 Starting DDD Example Application...")
-	fmt.Println("📖 This example demonstrates Domain-Driven Design patterns in Go")
-	fmt.Println("🔧 Features: Entities, Value Objects, Domain Services, Application Services, Repositories")
-	fmt.Println()
-	
-	app.Run(port)
+	app := cmd.NewApp(cfg)
+
+	if err := app.Run(); err != nil {
+		fmt.Printf("Application error: %v\n", err)
+		os.Exit(1)
+	}
 }

@@ -1,5 +1,5 @@
 /*
-Package domain 领域层 - DDD架构的核心层
+Package order 订单子域 - DDD架构的核心层
 
 领域层是整个应用的核心，包含：
 - 聚合根（Aggregate Root）：维护一致性边界的实体
@@ -14,18 +14,16 @@ DDD核心原则：
 2. 所有字段私有，通过方法暴露行为
 3. 业务规则封装在实体和值对象内部
 */
-package domain
+package order
 
 import (
 	"errors"
 	"time"
 
+	"ddd-example/domain/shared"
+
 	"github.com/google/uuid"
 )
-
-// ============================================================================
-// 聚合根定义
-// ============================================================================
 
 // Order 订单聚合根
 // Order作为聚合根，维护订单的一致性边界
@@ -34,14 +32,14 @@ type Order struct {
 	id          string
 	userID      string
 	items       []OrderItem
-	totalAmount Money
-	status      OrderStatus
+	totalAmount shared.Money
+	status      Status
 	version     int // 乐观锁版本号，用于并发控制
 	createdAt   time.Time
 	updatedAt   time.Time
 
 	// 领域事件列表，用于记录聚合内发生的领域事件
-	events []DomainEvent
+	events []shared.DomainEvent
 }
 
 // OrderItem 订单项 - 聚合内的实体（非聚合根）
@@ -51,33 +49,33 @@ type OrderItem struct {
 	productID   string
 	productName string
 	quantity    int
-	unitPrice   Money
-	subtotal    Money
+	unitPrice   shared.Money
+	subtotal    shared.Money
 }
 
-// OrderStatus 订单状态枚举
-type OrderStatus string
+// Status 订单状态枚举
+type Status string
 
 const (
-	OrderStatusPending   OrderStatus = "PENDING"   // 待处理
-	OrderStatusConfirmed OrderStatus = "CONFIRMED" // 已确认
-	OrderStatusShipped   OrderStatus = "SHIPPED"   // 已发货
-	OrderStatusDelivered OrderStatus = "DELIVERED" // 已送达
-	OrderStatusCancelled OrderStatus = "CANCELLED" // 已取消
+	StatusPending   Status = "PENDING"   // 待处理
+	StatusConfirmed Status = "CONFIRMED" // 已确认
+	StatusShipped   Status = "SHIPPED"   // 已发货
+	StatusDelivered Status = "DELIVERED" // 已送达
+	StatusCancelled Status = "CANCELLED" // 已取消
 )
 
-// OrderPostOptions 创建订单的选项
-type OrderPostOptions struct {
+// PostOptions 创建订单的选项
+type PostOptions struct {
 	UserID string
-	Items  []OrderItemRequest
+	Items  []ItemRequest
 }
 
-// OrderItemRequest 创建订单项的请求
-type OrderItemRequest struct {
+// ItemRequest 创建订单项的请求
+type ItemRequest struct {
 	ProductID   string
 	ProductName string
 	Quantity    int
-	UnitPrice   Money
+	UnitPrice   shared.Money
 }
 
 // ============================================================================
@@ -92,7 +90,7 @@ type OrderItemRequest struct {
 
 // NewOrder 创建新的Order聚合根
 // 这是创建Order的唯一入口，确保订单创建时满足所有业务规则
-func NewOrder(userID string, requests []OrderItemRequest) (*Order, error) {
+func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 	if userID == "" {
 		return nil, errors.New("userID cannot be empty")
 	}
@@ -114,12 +112,12 @@ func NewOrder(userID string, requests []OrderItemRequest) (*Order, error) {
 			productName: req.ProductName,
 			quantity:    req.Quantity,
 			unitPrice:   req.UnitPrice,
-			subtotal:    *NewMoney(req.UnitPrice.Amount()*int64(req.Quantity), req.UnitPrice.Currency()),
+			subtotal:    *shared.NewMoney(req.UnitPrice.Amount()*int64(req.Quantity), req.UnitPrice.Currency()),
 		}
 	}
 
 	// 计算总金额
-	totalAmount := NewMoney(0, "CNY")
+	totalAmount := shared.NewMoney(0, "CNY")
 	var err error
 	for _, item := range items {
 		totalAmount, err = totalAmount.Add(item.subtotal)
@@ -134,11 +132,11 @@ func NewOrder(userID string, requests []OrderItemRequest) (*Order, error) {
 		userID:      userID,
 		items:       items,
 		totalAmount: *totalAmount,
-		status:      OrderStatusPending,
+		status:      StatusPending,
 		version:     0,
 		createdAt:   now,
 		updatedAt:   now,
-		events:      make([]DomainEvent, 0),
+		events:      make([]shared.DomainEvent, 0),
 	}
 
 	// 记录领域事件
@@ -155,25 +153,25 @@ func NewOrder(userID string, requests []OrderItemRequest) (*Order, error) {
 // 由于字段是私有的，仓储层需要一种方式来重建聚合根
 // 使用DTO + 工厂方法模式，而非暴露setter或使用反射
 
-// OrderReconstructionDTO 订单重建数据传输对象
+// ReconstructionDTO 订单重建数据传输对象
 // 仅限于仓储层使用，用于从数据库重建Order聚合根
 // 这是一个特殊的设计，保持了领域模型的封装性
 // ⚠️ 注意：此DTO仅应在仓储实现中使用，不应在应用层调用
-type OrderReconstructionDTO struct {
+type ReconstructionDTO struct {
 	ID          string
 	UserID      string
 	Items       []OrderItem
-	TotalAmount Money
-	Status      OrderStatus
+	TotalAmount shared.Money
+	Status      Status
 	Version     int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// RebuildOrderFromDTO 从DTO重建Order聚合根
+// RebuildFromDTO 从DTO重建Order聚合根
 // 这是一个工厂方法，专门用于仓储层重建聚合根
 // ⚠️ 注意：此方法仅应在仓储实现中使用，不应在应用层调用
-func RebuildOrderFromDTO(dto OrderReconstructionDTO) *Order {
+func RebuildFromDTO(dto ReconstructionDTO) *Order {
 	return &Order{
 		id:          dto.ID,
 		userID:      dto.UserID,
@@ -183,22 +181,22 @@ func RebuildOrderFromDTO(dto OrderReconstructionDTO) *Order {
 		version:     dto.Version,
 		createdAt:   dto.CreatedAt,
 		updatedAt:   dto.UpdatedAt,
-		events:      []DomainEvent{},
+		events:      []shared.DomainEvent{},
 	}
 }
 
-// OrderItemReconstructionDTO 订单项重建数据传输对象
-type OrderItemReconstructionDTO struct {
+// ItemReconstructionDTO 订单项重建数据传输对象
+type ItemReconstructionDTO struct {
 	ID          string
 	ProductID   string
 	ProductName string
 	Quantity    int
-	UnitPrice   Money
-	Subtotal    Money
+	UnitPrice   shared.Money
+	Subtotal    shared.Money
 }
 
-// RebuildOrderItemFromDTO 从DTO重建OrderItem
-func RebuildOrderItemFromDTO(dto OrderItemReconstructionDTO) OrderItem {
+// RebuildItemFromDTO 从DTO重建OrderItem
+func RebuildItemFromDTO(dto ItemReconstructionDTO) OrderItem {
 	return OrderItem{
 		id:          dto.ID,
 		productID:   dto.ProductID,
@@ -218,10 +216,10 @@ func RebuildOrderItemFromDTO(dto OrderItemReconstructionDTO) OrderItem {
 
 // AddItem 通过聚合根添加订单项
 // 这是DDD的重要原则：聚合内的实体只能通过聚合根访问和修改
-// 参数productID, productName string, quantity int, unitPrice Money
-func (o *Order) AddItem(productID, productName string, quantity int, unitPrice Money) error {
+// 参数productID, productName string, quantity int, unitPrice shared.Money
+func (o *Order) AddItem(productID, productName string, quantity int, unitPrice shared.Money) error {
 	// 验证当前状态是否允许修改
-	if o.status != OrderStatusPending {
+	if o.status != StatusPending {
 		return errors.New("can only add items to pending orders")
 	}
 
@@ -236,13 +234,13 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice M
 		productName: productName,
 		quantity:    quantity,
 		unitPrice:   unitPrice,
-		subtotal:    *NewMoney(unitPrice.Amount()*int64(quantity), unitPrice.Currency()),
+		subtotal:    *shared.NewMoney(unitPrice.Amount()*int64(quantity), unitPrice.Currency()),
 	}
 
 	o.items = append(o.items, item)
 
 	// 重新计算总金额
-	newTotal := NewMoney(0, "CNY")
+	newTotal := shared.NewMoney(0, "CNY")
 	var err error
 	for _, it := range o.items {
 		newTotal, err = newTotal.Add(it.subtotal)
@@ -260,7 +258,7 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice M
 
 // RemoveItem 通过聚合根删除订单项
 func (o *Order) RemoveItem(itemID string) error {
-	if o.status != OrderStatusPending {
+	if o.status != StatusPending {
 		return errors.New("can only remove items from pending orders")
 	}
 
@@ -280,7 +278,7 @@ func (o *Order) RemoveItem(itemID string) error {
 	}
 
 	// 重新计算总金额
-	newTotal := NewMoney(0, "CNY")
+	newTotal := shared.NewMoney(0, "CNY")
 	for _, item := range o.items {
 		newTotal, _ = newTotal.Add(item.subtotal)
 	}
@@ -304,11 +302,11 @@ func (o *Order) RemoveItem(itemID string) error {
 // Confirm 确认订单（状态从PENDING -> CONFIRMED）
 // 业务规则：只有待处理的订单才能被确认
 func (o *Order) Confirm() error {
-	if o.status != OrderStatusPending {
+	if o.status != StatusPending {
 		return errors.New("only pending orders can be confirmed")
 	}
 
-	o.status = OrderStatusConfirmed
+	o.status = StatusConfirmed
 	o.updatedAt = time.Now()
 	o.version++
 
@@ -318,11 +316,11 @@ func (o *Order) Confirm() error {
 // Cancel 取消订单
 // 业务规则：已送达或已取消的订单不能再取消
 func (o *Order) Cancel() error {
-	if o.status == OrderStatusDelivered || o.status == OrderStatusCancelled {
+	if o.status == StatusDelivered || o.status == StatusCancelled {
 		return errors.New("cannot cancel delivered or cancelled orders")
 	}
 
-	o.status = OrderStatusCancelled
+	o.status = StatusCancelled
 	o.updatedAt = time.Now()
 	o.version++
 
@@ -332,11 +330,11 @@ func (o *Order) Cancel() error {
 // Ship 发货（状态从CONFIRMED -> SHIPPED）
 // 业务规则：只有已确认的订单才能发货
 func (o *Order) Ship() error {
-	if o.status != OrderStatusConfirmed {
+	if o.status != StatusConfirmed {
 		return errors.New("only confirmed orders can be shipped")
 	}
 
-	o.status = OrderStatusShipped
+	o.status = StatusShipped
 	o.updatedAt = time.Now()
 	o.version++
 
@@ -346,11 +344,11 @@ func (o *Order) Ship() error {
 // Deliver 送达（状态从SHIPPED -> DELIVERED）
 // 业务规则：只有已发货的订单才能标记为送达
 func (o *Order) Deliver() error {
-	if o.status != OrderStatusShipped {
+	if o.status != StatusShipped {
 		return errors.New("only shipped orders can be delivered")
 	}
 
-	o.status = OrderStatusDelivered
+	o.status = StatusDelivered
 	o.updatedAt = time.Now()
 	o.version++
 
@@ -374,11 +372,11 @@ func (o *Order) Items() []OrderItem {
 	copy(items, o.items)
 	return items
 }
-func (o *Order) TotalAmount() Money   { return o.totalAmount }
-func (o *Order) Status() OrderStatus  { return o.status }
-func (o *Order) Version() int         { return o.version }
-func (o *Order) CreatedAt() time.Time { return o.createdAt }
-func (o *Order) UpdatedAt() time.Time { return o.updatedAt }
+func (o *Order) TotalAmount() shared.Money { return o.totalAmount }
+func (o *Order) Status() Status            { return o.status }
+func (o *Order) Version() int              { return o.version }
+func (o *Order) CreatedAt() time.Time      { return o.createdAt }
+func (o *Order) UpdatedAt() time.Time      { return o.updatedAt }
 
 // ============================================================================
 // 领域事件管理
@@ -392,15 +390,15 @@ func (o *Order) UpdatedAt() time.Time { return o.updatedAt }
 // 1. 聚合根在状态变更时调用 recordEvent() 记录事件
 // 2. UoW 在事务中调用 PullEvents() 获取事件并保存到 outbox 表
 // 3. PullEvents 会清空事件列表，避免重复保存
-func (o *Order) PullEvents() []DomainEvent {
-	events := make([]DomainEvent, len(o.events))
+func (o *Order) PullEvents() []shared.DomainEvent {
+	events := make([]shared.DomainEvent, len(o.events))
 	copy(events, o.events)
-	o.events = make([]DomainEvent, 0)
+	o.events = make([]shared.DomainEvent, 0)
 	return events
 }
 
 // recordEvent 记录领域事件
-func (o *Order) recordEvent(event DomainEvent) {
+func (o *Order) recordEvent(event shared.DomainEvent) {
 	o.events = append(o.events, event)
 }
 
@@ -410,5 +408,8 @@ func (item OrderItem) ID() string          { return item.id }
 func (item OrderItem) ProductID() string   { return item.productID }
 func (item OrderItem) ProductName() string { return item.productName }
 func (item OrderItem) Quantity() int       { return item.quantity }
-func (item OrderItem) UnitPrice() Money    { return item.unitPrice }
-func (item OrderItem) Subtotal() Money     { return item.subtotal }
+func (item OrderItem) UnitPrice() shared.Money    { return item.unitPrice }
+func (item OrderItem) Subtotal() shared.Money     { return item.subtotal }
+
+// 编译时检查 Order 实现了 AggregateRoot 接口
+var _ shared.AggregateRoot = (*Order)(nil)

@@ -6,9 +6,9 @@ import (
 	"ddd-example/domain/user"
 )
 
-// UserPO 用户持久化对象
-// 注意：只用于数据库映射，不包含任何业务逻辑
-// 禁止在此定义 GORM 关联（如 HasMany, BelongsTo）
+// UserPO User persistence object
+// Note: Only used for database mapping, does not contain any business logic
+// Defining GORM associations (like HasMany, BelongsTo) is prohibited here
 type UserPO struct {
 	ID        string    `gorm:"primaryKey;size:64"`
 	Name      string    `gorm:"size:100;not null"`
@@ -20,12 +20,12 @@ type UserPO struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-// TableName 指定表名
+// TableName Specify table name
 func (UserPO) TableName() string {
 	return "users"
 }
 
-// FromDomain 将领域模型转换为持久化对象
+// FromDomain Convert domain model to persistence object
 func FromUserDomain(u *user.User) *UserPO {
 	return &UserPO{
 		ID:        u.ID(),
@@ -39,7 +39,7 @@ func FromUserDomain(u *user.User) *UserPO {
 	}
 }
 
-// ToDomain 将持久化对象转换为领域模型
+// ToDomain Convert persistence object to domain model
 func (po *UserPO) ToDomain() *user.User {
 	return user.RebuildFromDTO(user.ReconstructionDTO{
 		ID:        po.ID,

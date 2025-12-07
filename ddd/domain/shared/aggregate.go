@@ -1,48 +1,48 @@
 package shared
 
-// AggregateRoot 聚合根接口
-// 聚合根是DDD的核心概念，它是聚合的入口点，维护聚合的一致性边界
-// 特性：
-// 1. 有全局唯一标识
-// 2. 维护聚合内部的不变量
-// 3. 所有修改必须通过聚合根进行
-// 4. 负责发布领域事件
+// AggregateRoot Aggregate Root Interface
+// Aggregate root is a core concept in DDD, it's the entry point of an aggregate and maintains the consistency boundary of the aggregate
+// Features:
+// 1. Has a globally unique identifier
+// 2. Maintains invariants within the aggregate
+// 3. All modifications must go through the aggregate root
+// 4. Responsible for publishing domain events
 type AggregateRoot interface {
-	// ID 返回聚合根的全局唯一标识
+	// ID Returns the globally unique identifier of the aggregate root
 	ID() string
 
-	// Version 返回当前版本号，用于乐观锁并发控制
+	// Version Returns the current version number, used for optimistic locking concurrency control
 	Version() int
 
-	// PullEvents 获取并清空聚合根记录的领域事件
-	// 这是标准的领域事件模式：聚合根记录事件，存储库在保存后发布事件
+	// PullEvents Gets and clears the domain events recorded by the aggregate root
+	// This is the standard domain event pattern: aggregate root records events, repository publishes events after saving
 	PullEvents() []DomainEvent
 }
 
-// IsAggregateRoot 类型标记函数
-// 用于编译时检查某个类型是否实现了AggregateRoot接口
-// 使用方法：var _ = IsAggregateRoot(&User{})
+// IsAggregateRoot Type marker function
+// Used for compile-time checking if a type implements the AggregateRoot interface
+// Usage: var _ = IsAggregateRoot(&User{})
 func IsAggregateRoot(agg AggregateRoot) AggregateRoot {
 	return agg
 }
 
-// Entity 实体接口
-// 实体与值对象的区别：
-// 1. 实体有唯一标识（ID）
-// 2. 实体的生命周期较长
-// 3. 通过标识判断相等性（即使属性相同，ID不同就是不同的实体）
+// Entity Entity Interface
+// Differences between entity and value object:
+// 1. Entity has a unique identifier (ID)
+// 2. Entity has a longer lifecycle
+// 3. Equality is determined by identifier (even with same attributes, different ID means different entity)
 type Entity interface {
 	ID() string
 }
 
-// ValueObject 值对象接口
-// 值对象的特征：
-// 1. 没有唯一标识
-// 2. 不可变（immutable）
-// 3. 通过属性值判断相等性
-// 4. 通常用于描述性概念
-// 注意：Go语言中没有完美的方式强制实现不可变性，需要通过约定和编码规范保证
+// ValueObject Value Object Interface
+// Characteristics of value objects:
+// 1. No unique identifier
+// 2. Immutable
+// 3. Equality is determined by attribute values
+// 4. Typically used for descriptive concepts
+// Note: There's no perfect way to enforce immutability in Go, it needs to be guaranteed through conventions and coding standards
 type ValueObject interface {
-	// Equals 比较两个值对象是否相等
+	// Equals Compare whether two value objects are equal
 	Equals(other interface{}) bool
 }

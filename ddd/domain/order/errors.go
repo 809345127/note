@@ -2,7 +2,7 @@ package order
 
 import "errors"
 
-// 领域错误定义
+// Domain error definitions
 var (
 	ErrOrderNotFound = errors.New("order not found")
 )

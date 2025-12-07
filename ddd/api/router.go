@@ -1,28 +1,32 @@
 package api
 
 import (
+	"ddd-example/api/health"
+	"ddd-example/api/middleware"
+	"ddd-example/api/order"
+	"ddd-example/api/user"
 	"ddd-example/config"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Router 路由配置
+// Router Route configuration
 type Router struct {
 	engine           *gin.Engine
 	config           *config.Config
-	healthController *HealthController
-	userController   *UserController
-	orderController  *OrderController
+	healthController *health.Controller
+	userController   *user.Controller
+	orderController  *order.Controller
 }
 
-// NewRouter 创建路由配置
+// NewRouter Create route configuration
 func NewRouter(
 	cfg *config.Config,
-	healthController *HealthController,
-	userController *UserController,
-	orderController *OrderController,
+	healthController *health.Controller,
+	userController *user.Controller,
+	orderController *order.Controller,
 ) *Router {
-	// 根据环境设置Gin模式
+	// Set Gin mode based on environment
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	} else if cfg.IsDevelopment() {
@@ -33,12 +37,12 @@ func NewRouter(
 
 	engine := gin.New()
 
-	// 添加中间件（顺序很重要）
-	engine.Use(RequestIDMiddleware())        // 1. 首先生成请求ID
-	engine.Use(RecoveryMiddleware())         // 2. 恢复中间件
-	engine.Use(LoggingMiddleware())          // 3. 日志中间件
-	engine.Use(CORSMiddleware(&cfg.CORS))    // 4. CORS
-	engine.Use(RateLimitMiddleware(&cfg.Server.RateLimit)) // 5. 限流
+	// Add middleware (order is important)
+	engine.Use(middleware.RequestIDMiddleware())                      // 1. Generate request ID first
+	engine.Use(middleware.RecoveryMiddleware())                       // 2. Recovery middleware
+	engine.Use(middleware.LoggingMiddleware())                        // 3. Logging middleware
+	engine.Use(middleware.CORSMiddleware(&cfg.CORS))                  // 4. CORS
+	engine.Use(middleware.RateLimitMiddleware(&cfg.Server.RateLimit)) // 5. Rate limiting
 
 	return &Router{
 		engine:           engine,
@@ -49,18 +53,18 @@ func NewRouter(
 	}
 }
 
-// SetupRoutes 设置所有路由
+// SetupRoutes Set up all routes
 func (r *Router) SetupRoutes() {
-	// 设置API路由组
+	// Set API route group
 	apiGroup := r.engine.Group("/api/v1")
 	{
-		// 注册控制器路由
+		// Register controller routes
 		r.healthController.RegisterRoutes(apiGroup)
 		r.userController.RegisterRoutes(apiGroup)
 		r.orderController.RegisterRoutes(apiGroup)
 	}
 
-	// 设置根路径路由
+	// Set root path route
 	r.engine.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"name":    r.config.App.Name,
@@ -72,7 +76,7 @@ func (r *Router) SetupRoutes() {
 	})
 }
 
-// GetEngine 获取Gin引擎
+// GetEngine Get Gin engine
 func (r *Router) GetEngine() *gin.Engine {
 	return r.engine
 }

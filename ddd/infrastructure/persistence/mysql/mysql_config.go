@@ -12,7 +12,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// Config MySQL配置
+// Config MySQL configuration
 type Config struct {
 	Host            string
 	Port            string
@@ -24,15 +24,15 @@ type Config struct {
 	ConnMaxLifetime time.Duration
 }
 
-// DSN 生成数据源名称
+// DSN Generate data source name
 func (c *Config) DSN() string {
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local&charset=utf8mb4&collation=utf8mb4_unicode_ci",
 		c.Username, c.Password, c.Host, c.Port, c.Database)
 }
 
-// Connect 连接到MySQL并返回GORM实例
+// Connect Connect to MySQL and return GORM instance
 func (c *Config) Connect() (*gorm.DB, error) {
-	// 配置GORM日志
+	// Configure GORM logging
 	gormConfig := &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
 	}
@@ -42,13 +42,13 @@ func (c *Config) Connect() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// 获取底层sql.DB以配置连接池
+	// Get underlying sql.DB to configure connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
 	}
 
-	// 设置连接池参数
+	// Set connection pool parameters
 	if c.MaxOpenConns > 0 {
 		sqlDB.SetMaxOpenConns(c.MaxOpenConns)
 	} else {
@@ -70,8 +70,8 @@ func (c *Config) Connect() (*gorm.DB, error) {
 	return db, nil
 }
 
-// AutoMigrate 自动迁移数据库表结构
-// 注意：仅在开发环境使用，生产环境应使用迁移工具
+// AutoMigrate Auto migrate database schema
+// Note: Only use in development environment, use migration tools in production
 func AutoMigrate(db *gorm.DB) error {
 	logger.Info().Msg("Running database auto migration...")
 

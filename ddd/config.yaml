@@ -10,8 +10,8 @@ server:
   shutdown_timeout: 10s
   rate_limit:
     enabled: true
-    rate: 100      # 每秒请求数
-    burst: 200     # 突发容量
+    rate: 100      # Requests per second
+    burst: 200     # Burst capacity
 
 database:
   type: mock       # mock, mysql

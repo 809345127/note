@@ -11,47 +11,47 @@ import (
 	"github.com/google/uuid"
 )
 
-// MockOrderRepository 订单仓储的Mock实现
-// DDD原则：仓储只负责聚合根的持久化，不负责发布事件
-// 事件发布由 UoW 保存到 outbox 表，后台服务异步发布
+// MockOrderRepository Mock implementation of order repository
+// DDD principle: Repository is only responsible for persistence of aggregate roots, not event publishing
+// Events are saved to outbox table by UoW and published asynchronously by background services
 type MockOrderRepository struct {
 	orders map[string]*order.Order
 	mu     sync.RWMutex
 }
 
-// NewMockOrderRepository 创建Mock订单仓储
+// NewMockOrderRepository Create Mock order repository
 func NewMockOrderRepository() *MockOrderRepository {
 	repo := &MockOrderRepository{
 		orders: make(map[string]*order.Order),
 	}
 
-	// 初始化一些测试数据
+	// Initialize some test data
 	repo.initializeTestData()
 	return repo
 }
 
-// initializeTestData 初始化测试数据
+// initializeTestData Initialize test data
 func (r *MockOrderRepository) initializeTestData() {
-	// 创建测试订单
+	// Create test orders
 	order1 := r.createTestOrder("order-1", "user-1", "order-1-items")
 	order2 := r.createTestOrder("order-2", "user-2", "order-2-items")
 	order3 := r.createTestOrder("order-3", "user-1", "order-3-items")
 
 	if order1 != nil && order2 != nil && order3 != nil {
-		// 设置不同的订单状态
+		// Set different order statuses
 		order1.Confirm()
 		order1.Ship()
 
 		order2.Confirm()
 
-		// 使用订单的实际ID作为key（而不是硬编码的key）
+		// Use the actual order ID as key (instead of hardcoded key)
 		r.orders[order1.ID()] = order1
 		r.orders[order2.ID()] = order2
 		r.orders[order3.ID()] = order3
 	}
 }
 
-// createTestOrder 创建测试订单（仅用于Mock数据初始化）
+// createTestOrder Create test order (only used for Mock data initialization)
 func (r *MockOrderRepository) createTestOrder(id, userID, itemsType string) *order.Order {
 	var requests []order.ItemRequest
 
@@ -73,7 +73,7 @@ func (r *MockOrderRepository) createTestOrder(id, userID, itemsType string) *ord
 			},
 		}
 	case "order-2-items":
-		// 2个AirPods Pro
+		// 2 AirPods Pro
 		requests = []order.ItemRequest{
 			{
 				ProductID:   "prod-3",
@@ -83,7 +83,7 @@ func (r *MockOrderRepository) createTestOrder(id, userID, itemsType string) *ord
 			},
 		}
 	case "order-3-items":
-		// 1个iPhone 15
+		// 1 iPhone 15
 		requests = []order.ItemRequest{
 			{
 				ProductID:   "prod-1",
@@ -101,7 +101,7 @@ func (r *MockOrderRepository) createTestOrder(id, userID, itemsType string) *ord
 	return o
 }
 
-// NextIdentity 生成新的订单ID
+// NextIdentity Generate new order ID
 func (r *MockOrderRepository) NextIdentity() string {
 	return "order-" + uuid.New().String()
 }
@@ -112,9 +112,9 @@ func (r *MockOrderRepository) Save(ctx context.Context, o *order.Order) error {
 
 	r.orders[o.ID()] = o
 
-	// 注意：不在仓储中发布事件！
-	// 事件由 UoW 在事务提交前保存到 outbox 表
-	// 后台 OutboxProcessor 异步发布到消息队列
+	// Note: Do not publish events in repository!
+	// Events are saved to outbox table by UoW before transaction commit
+	// Background OutboxProcessor publishes to message queue asynchronously
 
 	return nil
 }
@@ -156,7 +156,7 @@ func (r *MockOrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, u
 	return orders, nil
 }
 
-// Remove 逻辑删除订单
+// Remove Logical deletion of order
 func (r *MockOrderRepository) Remove(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -166,6 +166,6 @@ func (r *MockOrderRepository) Remove(ctx context.Context, id string) error {
 		return errors.New("order not found")
 	}
 
-	// 逻辑删除：标记为已取消
+	// Logical deletion: mark as cancelled
 	return o.Cancel()
 }

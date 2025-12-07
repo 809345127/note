@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 -- Insert sample data for testing
 INSERT INTO users (id, name, email, age, is_active) VALUES
-    ('user-sample-1', '张三', 'zhangsan@example.com', 25, TRUE),
-    ('user-sample-2', '李四', 'lisi@example.com', 30, TRUE),
-    ('user-sample-3', '王五', 'wangwu@example.com', 35, FALSE)
+    ('user-sample-1', 'Zhang San', 'zhangsan@example.com', 25, TRUE),
+    ('user-sample-2', 'Li Si', 'lisi@example.com', 30, TRUE),
+    ('user-sample-3', 'Wang Wu', 'wangwu@example.com', 35, FALSE)
 ON DUPLICATE KEY UPDATE name = VALUES(name);

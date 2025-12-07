@@ -2,99 +2,99 @@ package shared
 
 import "context"
 
-// UnitOfWork 工作单元接口
-// DDD原则：
-// 1. 跟踪聚合根的变化
-// 2. 管理事务边界
-// 3. 协调仓储的保存操作
-// 4. 保证聚合的一致性
+// UnitOfWork Unit of Work Interface
+// DDD principles:
+// 1. Track changes to aggregate roots
+// 2. Manage transaction boundaries
+// 3. Coordinate repository save operations
+// 4. Ensure aggregate consistency
 //
-// 使用模式：
+// Usage pattern:
 // uow := unitOfWorkFactory.New()
 //
 //	err := uow.Execute(func() error {
-//	    // 加载聚合根
+//	    // Load aggregate roots
 //	    user, _ := userRepo.FindByID(userID)
 //	    order, _ := orderRepo.FindByID(orderID)
 //
-//	    // 执行业务操作
+//	    // Execute business operations
 //	    user.Deactivate()
 //	    order.Cancel()
 //
-//	    // 保存（在工作单元执行时自动处理）
+//	    // Save (handled automatically during unit of work execution)
 //	    uow.RegisterDirty(user)
 //	    uow.RegisterDirty(order)
 //
 //	    return nil
 //	})
 type UnitOfWork interface {
-	// Execute 在事务中执行业务操作
-	// 自动处理begin、commit和rollback
+	// Execute Execute business operations in transaction
+	// Automatically handles begin, commit and rollback
 	Execute(fn func() error) error
 
-	// RegisterNew 注册新建的聚合根
+	// RegisterNew Register newly created aggregate root
 	RegisterNew(aggregate AggregateRoot)
 
-	// RegisterDirty 注册被修改的聚合根
+	// RegisterDirty Register modified aggregate root
 	RegisterDirty(aggregate AggregateRoot)
 
-	// RegisterClean 注册干净的聚合根（未改变）
+	// RegisterClean Register clean aggregate root (unchanged)
 	RegisterClean(aggregate AggregateRoot)
 
-	// RegisterRemoved 注册被删除的聚合根
+	// RegisterRemoved Register deleted aggregate root
 	RegisterRemoved(aggregate AggregateRoot)
 }
 
-// UnitOfWorkFactory 工作单元工厂
+// UnitOfWorkFactory Unit of Work Factory
 type UnitOfWorkFactory interface {
-	// New 创建新的工作单元
+	// New Create new unit of work
 	New() UnitOfWork
 }
 
-// TransactionManager 事务管理器接口
+// TransactionManager Transaction Manager Interface
 type TransactionManager interface {
-	// Begin 开始事务
+	// Begin Begin transaction
 	Begin() error
 
-	// Commit 提交事务
+	// Commit Commit transaction
 	Commit() error
 
-	// Rollback 回滚事务
+	// Rollback Rollback transaction
 	Rollback() error
 
-	// InTransaction 是否处于事务中
+	// InTransaction Whether in transaction
 	InTransaction() bool
 }
 
-// OutboxRepository Outbox 仓储接口
-// 用于保存领域事件到 outbox 表，与业务数据同事务提交
+// OutboxRepository Outbox Repository Interface
+// Used to save domain events to outbox table, committed in the same transaction as business data
 type OutboxRepository interface {
-	// SaveEvent 保存事件到 outbox 表（在当前事务中）
+	// SaveEvent Save event to outbox table (in current transaction)
 	SaveEvent(ctx context.Context, event DomainEvent) error
 }
 
-// IsolationLevel 事务隔离级别
+// IsolationLevel Transaction Isolation Level
 type IsolationLevel string
 
 const (
-	// ReadUncommitted 未提交读
+	// ReadUncommitted Read Uncommitted
 	ReadUncommitted IsolationLevel = "READ_UNCOMMITTED"
-	// ReadCommitted 提交读
+	// ReadCommitted Read Committed
 	ReadCommitted IsolationLevel = "READ_COMMITTED"
-	// RepeatableRead 可重复读
+	// RepeatableRead Repeatable Read
 	RepeatableRead IsolationLevel = "REPEATABLE_READ"
-	// Serializable 可串行化（最高隔离级别）
+	// Serializable Serializable (highest isolation level)
 	Serializable IsolationLevel = "SERIALIZABLE"
 )
 
-// ExecuteEvent 执行事件
+// ExecuteEvent Execute Event
 type ExecuteEvent struct {
 	Type       ExecuteEventType
 	Aggregates []AggregateRoot
 	Error      error
 }
 
-// ExecuteEventType 执行事件类型
+// ExecuteEventType Execute Event Type
 type ExecuteEventType string
 
 const (

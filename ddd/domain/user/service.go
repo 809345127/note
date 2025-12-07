@@ -1,12 +1,12 @@
 /*
-领域服务（Domain Service）
+Domain Service
 
-领域服务用于处理不适合放在单个实体中的业务逻辑，通常是：
-1. 跨多个聚合根的业务规则验证
-2. 需要访问多个仓储的复杂业务计算
-3. 无状态的业务规则
+Domain services handle business logic that doesn't fit well in single entities, typically:
+1. Business rule validation across multiple aggregate roots
+2. Complex business calculations requiring access to multiple repositories
+3. Stateless business rules
 
-核心原则：领域服务只读不写
+Core principle: Domain service only reads, does not write
 */
 package user
 
@@ -15,19 +15,19 @@ import (
 	"errors"
 )
 
-// DomainService 用户领域服务 - 处理用户相关的业务逻辑
+// DomainService User domain service - handles user-related business logic
 type DomainService struct {
 	userRepository Repository
 }
 
-// NewDomainService 创建用户领域服务
+// NewDomainService Create user domain service
 func NewDomainService(userRepo Repository) *DomainService {
 	return &DomainService{
 		userRepository: userRepo,
 	}
 }
 
-// CanUserPlaceOrder 检查用户是否可以下单
+// CanUserPlaceOrder Check if user can place order
 func (s *DomainService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
 	user, err := s.userRepository.FindByID(ctx, userID)
 	if err != nil {

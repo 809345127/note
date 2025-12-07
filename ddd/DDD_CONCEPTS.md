@@ -1,43 +1,43 @@
-# DDD核心概念详解
+# DDD Core Concepts Explained
 
-本文档详细解释领域驱动设计(DDD)的核心概念，并通过本项目的具体实现帮助开发者理解从贫血模式到DDD架构的转变。
+This document explains the core concepts of Domain-Driven Design (DDD) in detail, and helps developers understand the transformation from the anemic model to DDD architecture through concrete implementations in this project.
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [什么是DDD](#什么是ddd)
-- [DDD核心概念](#ddd核心概念)
-- [分层架构](#分层架构)
-- [从贫血模式到DDD](#从贫血模式到ddd)
-- [领域建模实践](#领域建模实践)
-- [代码组织原则](#代码组织原则)
-- [最佳实践](#最佳实践)
-- [常见误区](#常见误区)
+- [What is DDD](#what-is-ddd)
+- [DDD Core Concepts](#ddd-core-concepts)
+- [Layered Architecture](#layered-architecture)
+- [From Anemic Model to DDD](#from-anemic-model-to-ddd)
+- [Domain Modeling Practices](#domain-modeling-practices)
+- [Code Organization Principles](#code-organization-principles)
+- [Best Practices](#best-practices)
+- [Common Pitfalls](#common-pitfalls)
 
-## 🎯 什么是DDD
+## 🎯 What is DDD
 
-领域驱动设计(Domain-Driven Design, DDD)是一种软件开发方法，核心思想是：
+Domain-Driven Design (DDD) is a software development approach with the core idea:
 
-> **通过深入理解业务领域，将业务知识融入软件设计，创建能够准确表达业务概念的软件模型。**
+> **Through deep understanding of the business domain, integrate business knowledge into software design to create software models that accurately express business concepts.**
 
-DDD的主要优势：
-- **业务导向**: 代码直接反映业务概念和规则
-- **高内聚低耦合**: 领域模型包含业务逻辑，减少重复代码
-- **可维护性**: 业务逻辑集中，便于理解和修改
-- **可测试性**: 领域逻辑可以独立测试
+Main advantages of DDD:
+- **Business-oriented**: Code directly reflects business concepts and rules
+- **High cohesion, low coupling**: Domain models contain business logic, reducing duplicate code
+- **Maintainability**: Business logic is centralized, making it easy to understand and modify
+- **Testability**: Domain logic can be tested independently
 
-## 🧩 DDD核心概念
+## 🧩 DDD Core Concepts
 
-### 1. 实体 (Entity)
+### 1. Entity
 
-**定义**: 具有唯一标识的对象，即使属性相同，标识不同就是不同的对象。
+**Definition**: Objects with unique identity - even if attributes are the same, different identities mean different objects.
 
-**特点**:
-- 有唯一的业务标识(ID)
-- 生命周期可能很长
-- 状态会随时间变化
-- 通过标识进行相等性比较
+**Characteristics**:
+- Has a unique business identifier (ID)
+- May have a long lifecycle
+- State changes over time
+- Equality is determined by identity
 
-**项目实现** (`domain/user.go`):
+**Project Implementation** (`domain/user.go`):
 ```go
 type User struct {
     id        string
@@ -49,7 +49,7 @@ type User struct {
     updatedAt time.Time
 }
 
-// 业务行为方法
+// Business behavior methods
 func (u *User) CanMakePurchase() bool {
     return u.isActive && u.age >= 18
 }
@@ -64,7 +64,7 @@ func (u *User) Deactivate() {
     u.updatedAt = time.Now()
 }
 
-// 提供访问方法而非直接暴露字段
+// Provide accessor methods instead of directly exposing fields
 func (u *User) ID() string {
     return u.id
 }
@@ -94,23 +94,23 @@ func (u *User) UpdatedAt() time.Time {
 }
 ```
 
-### 2. 值对象 (Value Object)
+### 2. Value Object
 
-**定义**: 描述领域中的某个概念，通过值而非标识来区分。
+**Definition**: Describes a concept in the domain, distinguished by value rather than identity.
 
-**特点**:
-- 没有唯一标识
-- 不可变(immutable)
-- 通过值相等性比较
-- 可以组合其他值对象
+**Characteristics**:
+- No unique identifier
+- Immutable
+- Equality comparison by value
+- Can compose other value objects
 
-**项目实现** (`domain/value_objects.go`):
+**Project Implementation** (`domain/value_objects.go`):
 ```go
 type Email struct {
     value string
 }
 
-// 创建时验证格式
+// Validate format when creating
 func NewEmail(value string) (*Email, error) {
     if !isValidEmail(value) {
         return nil, ErrInvalidEmail
@@ -118,24 +118,24 @@ func NewEmail(value string) (*Email, error) {
     return &Email{value: value}, nil
 }
 
-// Value 获取邮箱值
+// Value: Get email value
 func (e Email) Value() string {
     return e.value
 }
 
-// Equals 比较两个Email值对象是否相等
+// Equals: Compare two Email value objects for equality
 func (e Email) Equals(other Email) bool {
     return e.value == other.value
 }
 
-// String 实现Stringer接口
+// String: Implement Stringer interface
 func (e Email) String() string {
     return e.value
 }
 
 
 type Money struct {
-    amount   int64  // 以分为单位，避免浮点数精度问题
+    amount   int64  // In cents to avoid floating-point precision issues
     currency string
 }
 
@@ -146,17 +146,17 @@ func NewMoney(amount int64, currency string) *Money {
     }
 }
 
-// Amount 获取金额数量
+// Amount: Get amount
 func (m Money) Amount() int64 {
     return m.amount
 }
 
-// Currency 获取货币类型
+// Currency: Get currency type
 func (m Money) Currency() string {
     return m.currency
 }
 
-// Add 金额相加，返回新的Money值对象
+// Add: Add amounts and return new Money value object
 func (m Money) Add(other Money) (*Money, error) {
     if m.currency != other.currency {
         return nil, errors.New("cannot add money with different currencies")
@@ -169,36 +169,36 @@ func (m Money) Add(other Money) (*Money, error) {
 }
 ```
 
-### 3. 领域服务 (Domain Service)
+### 3. Domain Service
 
-**定义**: 处理不属于任何单个实体的业务逻辑，通常涉及多个实体或值对象。
+**Definition**: Handles business logic that doesn't belong to any single entity, typically involving multiple entities or value objects.
 
-**特点**:
-- 无状态(stateless)
-- 协调多个实体完成业务操作
-- 包含复杂的业务规则
+**Characteristics**:
+- Stateless
+- Coordinates multiple entities to complete business operations
+- Contains complex business rules
 
-**项目实现** (`domain/services.go`):
+**Project Implementation** (`domain/services.go`):
 ```go
 type UserDomainService struct {
     userRepository  UserRepository
     orderRepository OrderRepository
 }
 
-// 检查用户是否可以创建订单
-// DDD原则：领域服务可依赖 Repository 接口查询数据，但不调用 Save 持久化
+// Check if user can create an order
+// DDD Principle: Domain Service can depend on Repository interface for queries, but doesn't call Save for persistence
 func (s *UserDomainService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
     user, err := s.userRepository.FindByID(ctx, userID)
     if err != nil {
         return false, err
     }
 
-    // 检查用户是否激活
+    // Check if user is activated
     if !user.IsActive() {
         return false, ErrUserNotActive
     }
 
-    // 检查用户是否可以购买（年龄等业务规则封装在实体内）
+    // Check if user can make purchases (age and other business rules encapsulated within entity)
     if !user.CanMakePurchase() {
         return false, errors.New("user cannot make purchases")
     }
@@ -206,7 +206,7 @@ func (s *UserDomainService) CanUserPlaceOrder(ctx context.Context, userID string
     return true, nil
 }
 
-// 计算用户总消费金额
+// Calculate user's total spending amount
 func (s *UserDomainService) CalculateUserTotalSpent(ctx context.Context, userID string) (Money, error) {
     orders, err := s.orderRepository.FindDeliveredOrdersByUserID(ctx, userID)
     if err != nil {
@@ -222,16 +222,16 @@ func (s *UserDomainService) CalculateUserTotalSpent(ctx context.Context, userID 
 }
 ```
 
-### 4. 领域事件 (Domain Event)
+### 4. Domain Event
 
-**定义**: 表示领域中发生的重要事件，用于解耦不同模块。
+**Definition**: Represents important events that occur in the domain, used to decouple different modules.
 
-**特点**:
-- 表示过去发生的事情
-- 包含事件相关的数据
-- 用于触发其他业务逻辑
+**Characteristics**:
+- Represents something that happened in the past
+- Contains event-related data
+- Used to trigger other business logic
 
-**项目实现** (`domain/events.go`):
+**Project Implementation** (`domain/events.go`):
 ```go
 type UserCreatedEvent struct {
     userID     string
@@ -274,48 +274,48 @@ func NewOrderCreatedEvent(orderID, userID string, totalAmount Money) OrderCreate
 }
 ```
 
-### 5. 仓储 (Repository)
+### 5. Repository
 
-**定义**: 提供领域对象的持久化机制，屏蔽底层数据存储细节。
+**Definition**: Provides persistence mechanisms for domain objects, shielding underlying data storage details.
 
-**特点**:
-- 提供领域语义的数据访问接口
-- 不暴露底层数据存储细节
-- 支持聚合根的生命周期管理
+**Characteristics**:
+- Provides domain-semantic data access interfaces
+- Doesn't expose underlying data storage details
+- Supports lifecycle management of aggregate roots
 
-**项目实现** (`domain/repositories.go`):
+**Project Implementation** (`domain/repositories.go`):
 ```go
-// DDD原则：
-// 1. 仓储只负责聚合根的持久化，不发布事件
-// 2. 不应该暴露批量查询（如FindAll），这类操作应该放在查询服务中
-// 3. 使用NextIdentity生成ID
-// 4. 事件由 UoW 保存到 outbox 表，后台 Message Relay 异步发布
+// DDD principles:
+// 1. Repository only persists aggregate roots, doesn't publish events
+// 2. Shouldn't expose bulk queries (like FindAll), such operations should be in query services
+// 3. Use NextIdentity to generate IDs
+// 4. Events are saved to outbox table by UoW, published asynchronously by Message Relay
 
 type UserRepository interface {
-    NextIdentity() string                             // 生成新的用户ID
-    Save(ctx context.Context, user *User) error       // 只负责持久化
+    NextIdentity() string                             // Generate new user ID
+    Save(ctx context.Context, user *User) error       // Only responsible for persistence
     FindByID(ctx context.Context, id string) (*User, error)
     FindByEmail(ctx context.Context, email string) (*User, error)
-    Remove(ctx context.Context, id string) error      // 逻辑删除
+    Remove(ctx context.Context, id string) error      // Logical deletion
 }
 
 type OrderRepository interface {
     NextIdentity() string
-    Save(ctx context.Context, order *Order) error     // 只负责持久化
+    Save(ctx context.Context, order *Order) error     // Only responsible for persistence
     FindByID(ctx context.Context, id string) (*Order, error)
     FindByUserID(ctx context.Context, userID string) ([]*Order, error)
     FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*Order, error)
-    Remove(ctx context.Context, id string) error      // 逻辑删除（标记为已取消）
+    Remove(ctx context.Context, id string) error      // Logical deletion (marked as cancelled)
 }
 ```
 
-### 6. 工厂 (Factory)
+### 6. Factory
 
-**定义**: 负责创建复杂的领域对象，封装创建逻辑。
+**Definition**: Responsible for creating complex domain objects, encapsulating creation logic.
 
-**项目实现** (在实体中实现):
+**Project Implementation** (implemented within entities):
 ```go
-// User工厂方法
+// User Factory method
 func NewUser(name string, email string, age int) (*User, error) {
     if name == "" {
         return nil, ErrInvalidName
@@ -343,162 +343,164 @@ func NewUser(name string, email string, age int) (*User, error) {
 }
 ```
 
-## 🏗️ 分层架构
+## 🏗️ Layered Architecture
 
-DDD采用分层架构，每层有明确的职责：
+DDD adopts a layered architecture, where each layer has clear responsibilities:
 
-**架构层级关系图**：
+**Architecture Layer Relationship Diagram**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│           用户界面层 (User Interface Layer)                  │
+│           User Interface Layer                              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  API层 (api/)                                         │  │
-│  │  - UserController  ◄─ 处理HTTP请求                    │  │
-│  │  - OrderController  ◄─ 路由和响应                     │  │
-│  │  - Middleware       ◄─ 认证、日志、CORS               │  │
+│  │  API Layer (api/)                                     │  │
+│  │  - router.go        ◄─ Route aggregation and initialization │  │
+│  │  - health/          ◄─ Health check controllers        │  │
+│  │  - user/, order/    ◄─ Controllers grouped by bounded context │  │
+│  │  - middleware/, response/ ◄─ Cross-cutting concerns and unified responses │  │
 │  └───────────────────┬───────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────┘
-                      │ 依赖 (通过DTO)
+                      │ Dependency (via DTO)
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
-│           应用层 (Application Layer)                         │
+│           Application Layer                                 │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  Service层 (service/)                                  │  │
-│  │  - UserApplicationService  ◄─ 编排业务流程            │  │
-│  │  - OrderApplicationService ◄─ 事务管理和权限验证      │  │
-│  │  - DTO (Request/Response)  ◄─ 数据传输对象            │  │
+│  │  Application Layer (application/)                      │  │
+│  │  - UserApplicationService  ◄─ Orchestrate business processes │  │
+│  │  - OrderApplicationService ◄─ Transaction management and authorization │  │
+│  │  - DTO (Request/Response)  ◄─ Data Transfer Objects   │  │
 │  └───────────────────┬───────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────┘
-                      │ 依赖 (通过接口)
+                      │ Dependency (via interface)
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
-│           领域层 (Domain Layer)  ◄─ 核心层                   │
+│           Domain Layer  ◄─ Core Layer                       │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  Domain层 (domain/)                                    │  │
+│  │  Domain Layer (domain/)                                │  │
 │  │  ┌──────────────────────────────────────────────┐     │  │
-│  │  │  实体 (Entity)                               │     │  │
-│  │  │  - User (聚合根)  ◄─ 业务主体                │     │  │
-│  │  │  - Order (聚合根) ◄─ 包含OrderItem           │     │  │
+│  │  │  Entity                                      │     │  │
+│  │  │  - User (Aggregate Root)  ◄─ Business entity │     │  │
+│  │  │  - Order (Aggregate Root) ◄─ Contains OrderItem │     │  │
 │  │  └──────────────────┬───────────────────────────┘     │  │
-│  │                     │  组合                          │  │
+│  │                     │  Composition                     │  │
 │  │  ┌──────────────────▼───────────────────────────┐     │  │
-│  │  │  值对象 (Value Object)                       │     │  │
-│  │  │  - Email  ◄─ 不可变、验证格式                │     │  │
-│  │  │  - Money  ◄─ 不可变、封装货币逻辑            │     │  │
-│  │  │  - OrderItem  ◄─ 描述订单项                  │     │  │
+│  │  │  Value Object                                │     │  │
+│  │  │  - Email  ◄─ Immutable, validates format   │     │  │
+│  │  │  - Money  ◄─ Immutable, encapsulates currency logic │     │  │
+│  │  │  - OrderItem  ◄─ Describes order item      │     │  │
 │  │  └──────────────────┬───────────────────────────┘     │  │
-│  │                     │  使用                          │  │
+│  │                     │  Usage                           │  │
 │  │  ┌──────────────────▼───────────────────────────┐     │  │
-│  │  │  领域服务 (Domain Service)                   │     │  │
-│  │  │  - UserDomainService  ◄─ 跨实体业务逻辑     │     │  │
-│  │  │  - OrderDomainService ◄─ 订单处理流程       │     │  │
+│  │  │  Domain Service                              │     │  │
+│  │  │  - UserDomainService  ◄─ Cross-entity business logic │     │  │
+│  │  │  - OrderDomainService ◄─ Order processing flow │     │  │
 │  │  └──────────────────┬───────────────────────────┘     │  │
-│  │                     │  发布/订阅                     │  │
+│  │                     │  Publish/Subscribe               │  │
 │  │  ┌──────────────────▼───────────────────────────┐     │  │
-│  │  │  领域事件 (Domain Event)                     │     │  │
-│  │  │  - UserCreatedEvent  ◄─ 用户已创建          │     │  │
-│  │  │  - OrderPlacedEvent  ◄─ 订单已下单          │     │  │
+│  │  │  Domain Event                                │     │  │
+│  │  │  - UserCreatedEvent  ◄─ User created        │     │  │
+│  │  │  - OrderPlacedEvent  ◄─ Order placed        │     │  │
 │  │  └──────────────────┬───────────────────────────┘     │  │
-│  │                     │  定义                          │  │
+│  │                     │  Definition                      │  │
 │  │  ┌──────────────────▼───────────────────────────┐     │  │
-│  │  │  仓储接口 (Repository Interface)             │     │  │
-│  │  │  - UserRepository    ◄─ 抽象持久化接口      │     │  │
-│  │  │  - OrderRepository   ◄─ 屏蔽存储细节        │     │  │
+│  │  │  Repository Interface                        │     │  │
+│  │  │  - UserRepository    ◄─ Abstract persistence interface │     │  │
+│  │  │  - OrderRepository   ◄─ Shields storage details │     │  │
 │  │  └──────────────────────────────────────────────┘     │  │
 │  └───────────────────┬───────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────┘
-                      │ 依赖倒置 (通过接口) ─────────────────┐
+                      │ Dependency Inversion (via interface) ─┐
                       ↓                                         │
 ┌─────────────────────────────────────────────────────────────┐ │
-│       基础设施层 (Infrastructure Layer)                      │ │
+│       Infrastructure Layer                                   │ │
 │  ┌───────────────────────────────────────────────────────┐  │ │
-│  │  Mock层 (mock/)  ◄─ 测试实现                           │  │ │
+│  │  Mock Layer (mock/)  ◄─ Test implementation           │  │ │
 │  │  - MockUserRepository  ───────────────────────────────┼──┘ │
-│  │  - MockOrderRepository ◄─ 实现仓储接口                │    │
-│  │  - MockEventPublisher  ◄─ 实现事件发布器              │    │
+│  │  - MockOrderRepository ◄─ Implements repository interface │    │
+│  │  - MockEventPublisher  ◄─ Implements event publisher       │    │
 │  └───────────────────────────────────────────────────────┘    │
 │                                                               │
-│  📦 可替换为真实实现：                                         │
-│  - MySQL/PostgreSQL (数据库存储)                             │
-│  - Redis/MongoDB (缓存/NoSQL)                                │
-│  - Kafka/RabbitMQ (消息队列)                                 │
+│  📦 Replaceable with real implementations:                    │
+│  - MySQL/PostgreSQL (Database storage)                       │
+│  - Redis/MongoDB (Cache/NoSQL)                               │
+│  - Kafka/RabbitMQ (Message Queue)                            │
 └───────────────────────────────────────────────────────────────┘
 
-依赖原则：
-- 上层依赖下层（接口）
-- 下层不依赖上层
-- 领域层是核心，不依赖任何其他层
-- 依赖倒置：应用层依赖领域层的接口，而非具体实现
+Dependency principles:
+- Upper layers depend on lower layers (interfaces)
+- Lower layers don't depend on upper layers
+- Domain layer is the core, doesn't depend on any other layer
+- Dependency inversion: Application layer depends on domain layer interfaces, not concrete implementations
 ```
 
-### 1. 用户界面层 (User Interface Layer)
+### 1. User Interface Layer
 
-**职责**: 处理用户请求和响应展示
+**Responsibility**: Handle user requests and response presentation
 
-**项目实现** (`api/` 目录):
-- 控制器(Controller): 处理HTTP请求
-- 路由(Router): 定义API端点
-- 中间件(Middleware): 处理跨切面关注点
+**Project Implementation** (`api/` directory):
+- Routes (`router.go`): Initialize Gin, aggregate middleware and controllers
+- Controllers: Split by bounded context `health/`, `user/`, `order/`
+- Middleware (`middleware/`): Request ID, logging, recovery, CORS, rate limiting
+- Response wrapper (`response/`): Unified response structure and pagination
 
 ```go
-// UserController - 处理用户相关的HTTP请求
-type UserController struct {
-    userService *service.UserApplicationService
+// api/user/controller.go - Handle user-related HTTP requests
+type Controller struct {
+    userService *userapp.ApplicationService
 }
 
-func (c *UserController) CreateUser(ctx *gin.Context) {
-    var req CreateUserRequest
+func (c *Controller) CreateUser(ctx *gin.Context) {
+    var req userapp.CreateUserRequest
     if err := ctx.ShouldBindJSON(&req); err != nil {
-        api.HandleError(ctx, err)
+        response.HandleError(ctx, err, "Invalid request parameters", http.StatusBadRequest)
         return
     }
     
-    response, err := c.userService.CreateUser(req)
+    user, err := c.userService.CreateUser(ctx.Request.Context(), req)
     if err != nil {
-        api.HandleError(ctx, err)
+        response.HandleError(ctx, err, "Failed to create user", http.StatusInternalServerError)
         return
     }
     
-    api.HandleSuccess(ctx, response)
+    response.HandleSuccess(ctx, user, "User created successfully")
 }
 ```
 
-### 2. 应用层 (Application Layer)
+### 2. Application Layer
 
-**职责**: 协调领域层完成业务流程，不包含业务规则
+**Responsibility**: Coordinate the domain layer to complete business processes, does not contain business rules
 
-**项目实现** (`service/` 目录):
-- 应用服务(Application Service): 编排业务流程
-- DTO (Data Transfer Object): 数据传输对象
+**Project Implementation** (`application/` directory):
+- Application Service: Orchestrate business processes
+- DTO (Data Transfer Object): Data transfer objects
 
 ```go
 type UserApplicationService struct {
-    userRepo          domain.UserRepository      // ✓ 依赖仓储接口
-    orderRepo         domain.OrderRepository     // ✓ 可依赖多个仓储
-    userDomainService *domain.UserDomainService  // ✓ 依赖领域服务
-    uow               domain.UnitOfWork          // ✓ 依赖工作单元（管理事务和事件）
+    userRepo          domain.UserRepository      // ✓ Depends on repository interface
+    orderRepo         domain.OrderRepository     // ✓ Can depend on multiple repositories
+    userDomainService *domain.UserDomainService  // ✓ Depends on domain service
+    uow               domain.UnitOfWork          // ✓ Depends on unit of work (manages transactions and events)
 }
 
 func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) {
-    // 验证邮箱唯一性
+    // Validate email uniqueness
     existingUser, _ := s.userRepo.FindByEmail(req.Email)
     if existingUser != nil {
         return nil, ErrEmailAlreadyExists
     }
 
-    // 创建用户实体（聚合根在创建时自动记录领域事件）
+    // Create user entity (aggregate root automatically records domain events when created)
     user, err := domain.NewUser(req.Name, req.Email, req.Age)
     if err != nil {
         return nil, err
     }
 
-    // 保存用户（仓储只负责持久化，不发布事件）
+    // Save user (repository only responsible for persistence, doesn't publish events)
     if err := s.userRepo.Save(user); err != nil {
         return nil, err
     }
 
-    // 注意：事件由 UoW 保存到 outbox 表，后台 Message Relay 异步发布
+    // Note: Events are saved to outbox table by UoW, published asynchronously by Message Relay
 
     return &CreateUserResponse{
         ID:        user.ID(),
@@ -512,21 +514,21 @@ func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserR
 }
 ```
 
-### 3. 领域层 (Domain Layer)
+### 3. Domain Layer
 
-**职责**: 包含核心业务逻辑和规则
+**Responsibility**: Contains core business logic and rules
 
-**项目实现** (`domain/` 目录):
-- 实体(Entity): 业务对象
-- 值对象(Value Object): 描述业务概念
-- 领域服务(Domain Service): 复杂业务逻辑
-- 领域事件(Domain Event): 重要业务事件
+**Project Implementation** (`domain/` directory):
+- Entity: Business objects
+- Value Object: Describe business concepts
+- Domain Service: Complex business logic
+- Domain Event: Important business events
 
-**领域模型关系图**：
+**Domain Model Relationship Diagram**:
 
 ```mermaid
 classDiagram
-    %% 实体（聚合根）
+    %% Entity (Aggregate Root)
     class User {
         <<Entity>>
         -id: string
@@ -573,7 +575,7 @@ classDiagram
         +Deliver() error
     }
 
-    %% 值对象
+    %% Value Object
     class Email {
         <<ValueObject>>
         -value: string
@@ -619,7 +621,7 @@ classDiagram
         CANCELLED
     }
 
-    %% 领域服务
+    %% Domain Service
     class UserDomainService {
         <<DomainService>>
         -userRepository: domain.UserRepository
@@ -637,7 +639,7 @@ classDiagram
         +ProcessOrder(orderID string) error
     }
 
-    %% 领域事件
+    %% Domain Event
     class UserCreatedEvent {
         <<DomainEvent>>
         -userID: string
@@ -664,7 +666,7 @@ classDiagram
         +OccurredOn() time.Time
     }
 
-    %% 仓储接口
+    %% Repository Interface
     class UserRepository {
         <<Repository Interface>>
         <<interface>>
@@ -686,7 +688,7 @@ classDiagram
         +Delete(id string) error
     }
 
-    %% 关系定义
+    %% Relationship Definitions
     User "1" --> "1" Email : has
     Order "1" --> "*" OrderItem : contains
     OrderItem "1" --> "1" Money : hasUnitPrice
@@ -705,30 +707,30 @@ classDiagram
     UserRepository ..> User : manages
     OrderRepository ..> Order : manages
 
-    %% 层级关系
-    note for User "领域层核心\n包含所有业务逻辑"
-    note for UserRepository "领域层接口\n屏蔽存储细节"
-    note for UserCreatedEvent "领域事件\n解耦模块"
+    %% Layer Relationships
+    note for User "Domain Layer Core\nContains all business logic"
+    note for UserRepository "Domain Layer Interface\nShields storage details"
+    note for UserCreatedEvent "Domain Event\nDecouples modules"
 ```
 
 
-### 4. 基础设施层 (Infrastructure Layer)
+### 4. Infrastructure Layer
 
-**职责**: 提供技术实现支持
+**Responsibility**: Provide technical implementation support
 
-**项目实现** (`mock/` 目录):
-- 仓储实现(Repository Implementation)
-- 事件发布实现(Event Publisher)
-- 外部服务集成
+**Project Implementation** (`mock/` directory):
+- Repository Implementation
+- Event Publisher Implementation
+- External service integration
 
-## 🔄 从贫血模式到DDD
+## 🔄 From Anemic Model to DDD
 
-### 贫血模式的问题
+### Problems with Anemic Model
 
-贫血模式(Anemic Domain Model)中，实体只包含数据，没有行为：
+In the Anemic Domain Model, entities only contain data without behavior:
 
 ```go
-// ❌ 贫血模式 - 不推荐
+// ❌ Anemic Model - Not recommended
 type User struct {
     ID       string `json:"id"`
     Name     string `json:"name"`
@@ -737,13 +739,13 @@ type User struct {
     IsActive bool   `json:"is_active"`
 }
 
-// 所有业务逻辑都在服务层
+// All business logic is in the service layer
 type UserService struct {
     repo UserRepository
 }
 
 func (s *UserService) CreateUser(name, email string, age int) error {
-    // 验证逻辑分散在服务层
+    // Validation logic scattered in service layer
     if name == "" {
         return errors.New("name cannot be empty")
     }
@@ -771,7 +773,7 @@ func (s *UserService) CanUserMakePurchase(userID string) (bool, error) {
         return false, err
     }
     
-    // 业务逻辑分散在服务层
+    // Business logic scattered in service layer
     if !user.IsActive {
         return false, nil
     }
@@ -783,29 +785,29 @@ func (s *UserService) CanUserMakePurchase(userID string) (bool, error) {
 }
 ```
 
-**贫血模式的问题**:
-1. **低内聚**: 业务逻辑分散在各个服务中
-2. **重复代码**: 相同的验证逻辑可能出现在多个地方
-3. **难以维护**: 修改业务规则需要找到所有相关代码
-4. **测试困难**: 需要测试整个服务层才能验证业务逻辑
+**Problems with Anemic Model**:
+1. **Low cohesion**: Business logic scattered across various services
+2. **Duplicate code**: Same validation logic may appear in multiple places
+3. **Difficult to maintain**: Need to find all related code when modifying business rules
+4. **Testing difficulties**: Need to test entire service layer to verify business logic
 
-### DDD的优势
+### Advantages of DDD
 
-DDD通过富领域模型解决这些问题：
+DDD solves these problems through rich domain models:
 
 ```go
-// ✅ DDD模式 - 推荐
+// ✅ DDD Pattern - Recommended
 type User struct {
     id        string
     name      string
-    email     Email  // 值对象
+    email     Email  // Value object
     age       int
     isActive  bool
     createdAt time.Time
     updatedAt time.Time
 }
 
-// 业务逻辑封装在实体内部
+// Business logic encapsulated within entity
 func NewUser(name string, email string, age int) (*User, error) {
     if name == "" {
         return nil, ErrInvalidName
@@ -814,7 +816,7 @@ func NewUser(name string, email string, age int) (*User, error) {
         return nil, ErrInvalidAge
     }
     
-    emailVO, err := NewEmail(email) // Email值对象内部验证格式
+    emailVO, err := NewEmail(email) // Email value object validates format internally
     if err != nil {
         return nil, err
     }
@@ -830,7 +832,7 @@ func NewUser(name string, email string, age int) (*User, error) {
     }, nil
 }
 
-// 业务行为方法
+// Business behavior methods
 func (u *User) CanMakePurchase() bool {
     return u.isActive && u.age >= 18
 }
@@ -851,83 +853,83 @@ func (u *User) UpdateEmail(newEmail string) error {
 }
 ```
 
-**DDD的优势**:
-1. **高内聚**: 相关逻辑封装在实体内部
-2. **低耦合**: 通过明确定义的接口与其他层交互
-3. **易于维护**: 修改业务规则只需修改实体内部代码
-4. **易于测试**: 可以独立测试领域逻辑
-5. **表达性强**: 代码直接反映业务概念
+**Advantages of DDD**:
+1. **High cohesion**: Related logic encapsulated within entities
+2. **Low coupling**: Clear interfaces for interaction with other layers
+3. **Easy maintenance**: Modify business rules by only changing entity internal code
+4. **Easy testing**: Can test domain logic independently
+5. **Expressive**: Code directly reflects business concepts
 
-## 🏭 领域建模实践
+## 🏭 Domain Modeling Practices
 
-### 1. 识别领域概念
+### 1. Identify Domain Concepts
 
-通过与业务专家交流，识别关键概念：
-- **用户(User)**: 系统的使用者
-- **订单(Order)**: 用户的购买行为
-- **订单项(OrderItem)**: 订单中的商品
-- **金额(Money)**: 货币金额
-- **邮箱(Email)**: 用户联系方式
+Identify key concepts through communication with business experts:
+- **User**: System user
+- **Order**: User's purchase behavior
+- **OrderItem**: Products in an order
+- **Money**: Monetary amount
+- **Email**: User contact information
 
-### 2. 区分实体和值对象
+### 2. Distinguish Entities and Value Objects
 
-**实体**: 有唯一标识，生命周期长
-- User (用户)
-- Order (订单)
+**Entity**: Has unique identifier, long lifecycle
+- User
+- Order
 
-**值对象**: 无标识，不可变，描述概念
-- Email (邮箱地址)
-- Money (货币金额)
-- OrderItem (订单项)
+**Value Object**: No identifier, immutable, describes concepts
+- Email (email address)
+- Money (monetary amount)
+- OrderItem (order item)
 
-### 3. 定义聚合和聚合根
+### 3. Define Aggregates and Aggregate Roots
 
-**聚合**: 一组相关的实体和值对象的集合
-- 用户聚合: User (聚合根)
-- 订单聚合: Order (聚合根) + OrderItem
+**Aggregate**: A collection of related entities and value objects
+- User Aggregate: User (aggregate root)
+- Order Aggregate: Order (aggregate root) + OrderItem
 
-**聚合根**: 聚合的入口点，负责维护聚合的一致性
-- User聚合根管理用户相关的所有业务规则
-- Order聚合根管理订单相关的所有业务规则
+**Aggregate Root**: Entry point of aggregate, responsible for maintaining aggregate consistency
+- User aggregate root manages all user-related business rules
+- Order aggregate root manages all order-related business rules
 
-### 4. 识别领域服务
+### 4. Identify Domain Services
 
-当业务逻辑不属于任何单个实体时，需要领域服务：
-- 用户下单前的验证逻辑
-- 用户消费金额计算
-- 订单状态转换规则
+When business logic doesn't belong to any single entity, domain service is needed:
+- Validation logic before user places order
+- User spending amount calculation
+- Order status transition rules
 
-### 5. 定义仓储接口
+### 5. Define Repository Interfaces
 
-为每个聚合根定义仓储接口：
-- UserRepository: 管理用户聚合的持久化
-- OrderRepository: 管理订单聚合的持久化
+Define repository interfaces for each aggregate root:
+- UserRepository: Manages user aggregate persistence
+- OrderRepository: Manages order aggregate persistence
 
-## 📋 代码组织原则
+## 📋 Code Organization Principles
 
-### 1. 按业务概念组织
+### 1. Organize by Business Concepts
 
 ```
 domain/
-├── user.go              # 用户实体
-├── order.go             # 订单实体
-├── value_objects.go     # 值对象
-├── services.go          # 领域服务
-├── events.go            # 领域事件
-└── repositories.go      # 仓储接口
+├── user.go              # User entity
+├── order.go             # Order entity
+├── value_objects.go     # Value objects
+├── services.go          # Domain services
+├── events.go            # Domain events
+└── repositories.go      # Repository interfaces
 ```
 
-### 2. 封装内部状态
+### 2. Encapsulate Internal State
 
 ```go
 type User struct {
-    id    string  // 小写表示私有
-    name  string  // 只能通过方法访问
+    id    string  // lowercase indicates private
+    name  string  // can only be accessed through methods
     email Email
     // ...
 }
 
-// 提供访问方法而非直接暴露字段
+// Provide accessor methods instead of directly exposing fields
 func (u *User) GetID() string {
     return u.id
 }
@@ -936,7 +938,7 @@ func (u *User) GetName() string {
     return u.name
 }
 
-// 提供业务行为方法
+// Provide business behavior methods
 func (u *User) ChangeName(newName string) error {
     if newName == "" {
         return ErrInvalidName
@@ -947,21 +949,21 @@ func (u *User) ChangeName(newName string) error {
 }
 ```
 
-### 3. 使用值对象封装概念
+### 3. Use Value Objects to Encapsulate Concepts
 
 ```go
-// 不推荐：使用原始类型
+// Not recommended: Using primitive types
 type Order struct {
-    totalAmount int64  // 含义不明确
-    currency    string // 容易出错
+    totalAmount int64  // Meaning unclear
+    currency    string // Error-prone
 }
 
-// 推荐：使用值对象
+// Recommended: Using value objects
 type Order struct {
-    totalAmount Money  // 明确的业务概念
+    totalAmount Money  // Clear business concept
 }
 
-// Money值对象封装货币相关逻辑
+// Money value object encapsulates currency-related logic
 func NewMoney(amount int64, currency string) (Money, error) {
     if amount < 0 {
         return Money{}, ErrNegativeAmount
@@ -973,10 +975,10 @@ func NewMoney(amount int64, currency string) (Money, error) {
 }
 ```
 
-### 4. 使用领域服务处理复杂逻辑
+### 4. Use Domain Services for Complex Logic
 
 ```go
-// 当业务逻辑涉及多个实体时，使用领域服务
+// When business logic involves multiple entities, use domain service
 type OrderDomainService struct {
     orderRepository OrderRepository
     userRepository  UserRepository
@@ -993,84 +995,84 @@ func (s *OrderDomainService) ProcessOrder(orderID string) error {
         return err
     }
     
-    // 复杂的业务逻辑：验证订单、检查用户状态、更新库存等
+    // Complex business logic: validate order, check user status, update inventory, etc.
     if !order.CanBeProcessed() {
         return ErrOrderCannotBeProcessed
     }
-    
+
     if !user.CanMakePurchase() {
         return ErrUserCannotMakePurchase
     }
-    
-    // 处理订单...
+
+    // Process order...
     return nil
 }
 ```
 
-### 5. ApplicationService 与 DomainService 职责划分
+### 5. ApplicationService vs DomainService Responsibility Division
 
-在DDD中，ApplicationService 和 DomainService 有明确的职责边界和依赖规则：
+In DDD, ApplicationService and DomainService have clear responsibility boundaries and dependency rules:
 
-#### ApplicationService 的依赖范围和职责
+#### ApplicationService Dependency Scope and Responsibilities
 
-**ApplicationService 可以依赖：**
-1. **Repository 接口** - 获取和保存聚合根
-2. **DomainService** - 执行跨实体的复杂业务逻辑
-3. **基础设施接口** - 如事件发布器、消息队列等
-4. **DTO** - 处理请求和响应的数据转换
+**ApplicationService can depend on:**
+1. **Repository interfaces** - Get and save aggregate roots
+2. **DomainService** - Execute complex business logic across entities
+3. **Infrastructure interfaces** - Such as event publishers, message queues, etc.
+4. **DTO** - Handle data conversion for requests and responses
 
-**ApplicationService 的核心职责（编排）：**
+**ApplicationService's core responsibility (orchestration):
 ```go
 type UserApplicationService struct {
-    userRepo          domain.UserRepository      // ✓ 依赖仓储接口
-    userDomainService *domain.UserDomainService  // ✓ 依赖领域服务
-    uow               domain.UnitOfWork          // ✓ 依赖工作单元（管理事务和事件）
+    userRepo          domain.UserRepository      // ✓ Depends on repository interface
+    userDomainService *domain.UserDomainService  // ✓ Depends on domain service
+    uow               domain.UnitOfWork          // ✓ Depends on unit of work (manages transactions and events)
 }
 ```
 
 ```go
-// ✅ 应用服务：协调业务流程、事务管理
+// ✅ Application Service: Orchestrates business processes and transaction management
 func (s *UserApplicationService) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) {
-    // 1. 验证唯一性（应用层职责）
+    // 1. Validate uniqueness (application layer responsibility)
     existingUser, _ := s.userRepo.FindByEmail(req.Email)
     if existingUser != nil {
         return nil, ErrEmailExists
     }
 
-    // 2. 创建实体（聚合根在创建时自动记录领域事件）
+    // 2. Create entity (aggregate root automatically records domain events when created)
     user, err := domain.NewUser(req.Name, req.Email, req.Age)
     if err != nil {
         return nil, err
     }
 
-    // 3. 保存聚合（仓储只负责持久化，事件由 UoW 保存到 outbox 表）
+    // 3. Save aggregate (repository only handles persistence, events saved to outbox table by UoW)
     if err := s.userRepo.Save(user); err != nil {
         return nil, err
     }
 
-    // 4. DTO转换
+    // 4. DTO conversion
     return s.convertToResponse(user), nil
 }
 ```
 
-**事件保存的两种场景：**
+**Two scenarios for event persistence:**
 
-| 事件类型 | 产生位置 | 保存到 outbox | 示例 |
+| Event Type | Generation Location | Saved to Outbox | Example |
 |---------|---------|--------------|------|
-| 聚合根状态变更事件 | 聚合根内部 | UoW 自动收集并保存 | UserCreated, OrderPlaced |
-| 跨聚合业务流程事件 | ApplicationService | 手动保存到 outbox | CheckoutCompleted, TransferCompleted |
+| Aggregate root state change events | Inside aggregate root | Auto-collected and saved by UoW | UserCreated, OrderPlaced |
+| Cross-aggregate business process events | ApplicationService | Manually saved to outbox | CheckoutCompleted, TransferCompleted |
 
-> **重要**：所有事件都通过 outbox 表 + Message Relay 发布，Application Service 不直接发布事件！
+> **Important**: All events are published through outbox table + Message Relay, Application Service does not directly publish events!
 
 ```go
-// ✅ 跨聚合业务流程完成后，将流程事件保存到 outbox 表
+// ✅ After cross-aggregate business process completes, save process event to outbox table
 func (s *OrderApplicationService) CompleteCheckout(ctx context.Context, req CheckoutRequest) error {
-    // 1. 扣减库存（调用库存聚合）
-    // 2. 创建订单（订单聚合，UoW 自动保存 OrderCreated 到 outbox）
-    // 3. 扣款（调用支付服务）
+    // 1. Deduct inventory (call inventory aggregate)
+    // 2. Create order (order aggregate, UoW auto-saves OrderCreated to outbox)
+    // 3. Deduct payment (call payment service)
 
-    // 4. 保存"流程完成"事件到 outbox（不属于任何单一聚合根）
-    // 事件由后台 Message Relay 异步发布
+    // 4. Save "process completed" event to outbox (doesn't belong to any single aggregate root)
+    // Event published asynchronously by background Message Relay
     event := NewCheckoutCompletedEvent(orderID, userID)
     if err := s.outboxRepo.SaveEvent(ctx, event); err != nil {
         return err
@@ -1079,272 +1081,272 @@ func (s *OrderApplicationService) CompleteCheckout(ctx context.Context, req Chec
 }
 ```
 
-**ApplicationService 必须实现所有接口**：
-> **关键规则**：所有接口都必须在 ApplicationService 中有对应方法，**即使只是简单的操作**。
+**ApplicationService must implement all interfaces**:
+> **Key Rule**: All interfaces must have corresponding methods in ApplicationService, **even for simple operations**.
 
 ```go
-// ✅ 正确：即使只是调用 user.Activate()，也要在ApplicationService中实现
+// ✅ Correct: Even just calling user.Activate() should be implemented in ApplicationService
 func (s *UserApplicationService) ActivateUser(userID string) error {
     user, err := s.userRepo.FindByID(userID)
     if err != nil {
         return err
     }
 
-    user.Activate()  // 调用实体方法（实体内部会记录 UserActivated 事件）
+    user.Activate()  // Call entity method (entity internally records UserActivated event)
 
-    // 仓储只负责持久化，UoW 会收集事件保存到 outbox 表
+    // Repository only responsible for persistence, UoW collects events to save to outbox table
     return s.userRepo.Save(user)
 }
 ```
 
 ```go
-// ❌ 错误：Controller直接操作实体
-func (c *UserController) ActivateUser(ctx *gin.Context) {
-    user, _ := c.userRepo.FindByID(userID)  // ❌ Controller不应该依赖Repo
-    user.Activate()                          // ❌ 绕过ApplicationService
-    c.userRepo.Save(user)                    // ❌ 职责混乱
+// ❌ Wrong: api/user.Controller directly operates entities
+func (c *Controller) ActivateUser(ctx *gin.Context) {
+    user, _ := c.userRepo.FindByID(userID)  // ❌ Controller shouldn't depend on Repo
+    user.Activate()                          // ❌ Bypasses ApplicationService
+    c.userRepo.Save(user)                    // ❌ Confused responsibilities
 }
 ```
 
-#### DomainService 的依赖范围和职责
+#### DomainService Dependency Scope and Responsibilities
 
-**DomainService 可以依赖：**
-1. **Repository 接口** - 获取多个聚合根（仅查询）
-2. **值对象** - 执行计算和验证
+**DomainService can depend on:**
+1. **Repository interfaces** - Get multiple aggregate roots (query only)
+2. **Value objects** - Perform calculations and validation
 
-**DomainService 不能依赖：**
-- ❌ 基础设施具体实现（数据库、消息队列）
-- ❌ ApplicationService（违反分层原则）
-- ❌ HTTP/Web框架
+**DomainService cannot depend on:**
+- ❌ Infrastructure concrete implementations (database, message queue)
+- ❌ ApplicationService (violates layering principles)
+- ❌ HTTP/Web frameworks
 
-#### 服务间的依赖规则
+#### Service Dependency Rules
 
-**依赖关系总览：**
+**Dependency Relationship Overview:**
 
-| 依赖方向 | 允许？ | 原因 |
+| Dependency Direction | Allowed? | Reason |
 |---------|-------|------|
-| AppService → DomainService | ✅ 推荐 | 正常分层依赖 |
-| AppService → 另一个 AppService | ❌ 禁止 | 事务边界混乱 |
-| DomainService → 另一个 DomainService | ⚠️ 可以但不推荐 | 考虑合并或抽取 |
-| DomainService → AppService | ❌ 禁止 | 违反分层原则 |
+| AppService → DomainService | ✅ Recommended | Normal layered dependency |
+| AppService → Another AppService | ❌ Forbidden | Transaction boundary confusion |
+| DomainService → Another DomainService | ⚠️ Possible but not recommended | Consider merging or extracting |
+| DomainService → AppService | ❌ Forbidden | Violates layering principles |
 
-**1. ApplicationService 之间：绝对禁止循环依赖**
+**1. Between ApplicationServices: Absolutely no circular dependencies**
 
 ```go
-// ❌ 错误：ApplicationService 互相依赖
+// ❌ Wrong: ApplicationServices depend on each other
 type UserAppService struct {
     orderAppService *OrderAppService  // A → B
 }
 type OrderAppService struct {
-    userAppService *UserAppService    // B → A  灾难！
+    userAppService *UserAppService    // B → A  Disaster!
 }
 ```
 
-**为什么禁止？**
-- **事务边界混乱**：A 开启事务调用 B，B 又调用 A，谁管事务？
-- **用例边界不清**：说明职责划分有问题
-- **无限递归风险**
+**Why forbidden?**
+- **Transaction boundary confusion**: A starts transaction calling B, B calls A again, who manages transaction?
+- **Unclear use case boundaries**: Indicates responsibility division problems
+- **Infinite recursion risk**
 
-**正确做法：共同逻辑下沉到 DomainService**
+**Correct approach: Move common logic down to DomainService**
 
 ```go
-// ✅ 正确：通过 DomainService 共享业务逻辑
+// ✅ Correct: Share business logic through DomainService
 type UserAppService struct {
     userDomainService  *UserDomainService
-    orderDomainService *OrderDomainService  // 可以依赖多个领域服务
+    orderDomainService *OrderDomainService  // Can depend on multiple domain services
 }
 type OrderAppService struct {
-    userDomainService  *UserDomainService   // 同样依赖领域服务，不互相依赖
+    userDomainService  *UserDomainService   // Also depends on domain service, no mutual dependency
     orderDomainService *OrderDomainService
 }
 ```
 
-**2. DomainService 之间：技术上可以，但不推荐**
+**2. Between DomainServices: Technically possible but not recommended**
 
 ```go
-// ⚠️ 不推荐：说明领域边界划分有问题
+// ⚠️ Not recommended: Indicates domain boundary division issues
 type UserDomainService struct {
     orderDomainService *OrderDomainService
 }
 type OrderDomainService struct {
-    userDomainService *UserDomainService  // 循环了
+    userDomainService *UserDomainService  // Circular dependency
 }
 ```
 
-**如果出现这种情况，考虑：**
-1. 合并成一个 DomainService
-2. 抽取共同逻辑到第三个 DomainService
-3. 重新审视领域边界划分
+**If this happens, consider:**
+1. Merge into one DomainService
+2. Extract common logic to a third DomainService
+3. Re-examine domain boundary division
 
-**通俗理解**：
-> ApplicationService 是"用例入口"，每个入口独立，不能互相调用（否则谁是入口？）
-> DomainService 是"业务顾问"，顾问之间可以协作，但频繁互相依赖说明分工有问题。
+**Plain understanding**:
+> ApplicationService is the "use case entry point", each entry point is independent and cannot call each other (otherwise who is the entry point?)
+> DomainService is a "business consultant", consultants can collaborate, but frequent interdependencies indicate division of labor problems.
 
-#### DomainService 与 Repository 的交互原则
+#### DomainService and Repository Interaction Principles
 
-**核心原则：DomainService 只读不写**
+**Core principle: DomainService is read-only, no writes**
 
-| 操作类型 | DomainService | ApplicationService | 说明 |
+| Operation Type | DomainService | ApplicationService | Description |
 |---------|---------------|-------------------|------|
-| 简单查询 | ⚠️ 可以，但建议传入 | ✅ 查询后传入 | 传入更易测试 |
-| 业务逻辑查询 | ✅ 可以主动查 | ✅ 也可以 | 查询逻辑本身是业务规则 |
-| **Save / Update** | **❌ 绝对禁止** | **✅ 唯一负责** | 事务边界在应用层 |
-| **Delete** | **❌ 绝对禁止** | **✅ 唯一负责** | 同上 |
+| Simple Query | ⚠️ Possible but recommend passing in | ✅ Query then pass in | Easier to test when passed in |
+| Business Logic Query | ✅ Can actively query | ✅ Also possible | Query logic itself is business rule |
+| **Save / Update** | **❌ Absolutely forbidden** | **✅ Sole responsibility** | Transaction boundary at application layer |
+| **Delete** | **❌ Absolutely forbidden** | **✅ Sole responsibility** | Same as above |
 
-**通俗理解**：
-> DomainService 像一个"顾问"，只负责回答"能不能做"、"怎么算"，但不动手改数据。
-> ApplicationService 像一个"经理"，听完顾问的建议后，决定是否执行并负责落地。
+**Plain understanding**:
+> DomainService is like a "consultant", only responsible for answering "can it be done", "how to calculate", but doesn't modify data.
+> ApplicationService is like a "manager", after listening to the consultant's advice, decides whether to execute and is responsible for implementation.
 
-**示例1：简单查询 - 推荐由 ApplicationService 传入**
+**Example 1: Simple Query - Recommended to be passed in by ApplicationService**
 
 ```go
-// ✅ 推荐：ApplicationService 查询后传入，DomainService 更纯净易测试
+// ✅ Recommended: ApplicationService queries then passes in, DomainService is purer and easier to test
 // ApplicationService
 func (s *OrderApplicationService) PlaceOrder(req PlaceOrderRequest) error {
     user, _ := s.userRepo.FindByID(req.UserID)
     pendingOrders, _ := s.orderRepo.FindPendingByUserID(req.UserID)
 
-    // 传入实体，DomainService 不依赖 Repository
+    // Pass in entities, DomainService doesn't depend on Repository
     if !s.userDomainService.CanUserPlaceOrder(user, pendingOrders) {
         return errors.New("cannot place order")
     }
     // ...
 }
 
-// DomainService - 纯函数，易于单元测试
+// DomainService - Pure function, easy to unit test
 func (s *UserDomainService) CanUserPlaceOrder(user *User, pendingOrders []*Order) bool {
     return user.IsActive() && user.Age() >= 18 && len(pendingOrders) < 5
 }
 ```
 
-**示例2：业务逻辑查询 - DomainService 可主动查询**
+**Example 2: Business Logic Query - DomainService can actively query**
 
 ```go
-// ✅ 合理：查询逻辑本身涉及业务规则，DomainService 主动查询更内聚
-// 场景：根据用户等级决定计算折扣的数据范围
+// ✅ Reasonable: Query logic itself involves business rules, DomainService actively queries for better cohesion
+// Scenario: Determine data range for discount calculation based on user level
 func (s *UserDomainService) CalculateDiscount(ctx context.Context, userID string) (Money, error) {
     user, _ := s.userRepo.FindByID(ctx, userID)
 
     var orders []*Order
     if user.IsVIP() {
-        // VIP用户：看过去一年的消费计算折扣
+        // VIP users: look at past year's consumption for discount calculation
         orders, _ = s.orderRepo.FindByUserIDAfter(ctx, userID, time.Now().AddDate(-1, 0, 0))
     } else {
-        // 普通用户：只看过去一个月
+        // Regular users: only look at past month
         orders, _ = s.orderRepo.FindByUserIDAfter(ctx, userID, time.Now().AddDate(0, -1, 0))
     }
 
-    // 根据历史消费计算折扣...
+    // Calculate discount based on historical consumption...
     return calculateDiscountFromOrders(orders), nil
 }
 ```
 
-**示例3：Save/Update - 绝对只能在 ApplicationService**
+**Example 3: Save/Update - Absolutely must be in ApplicationService only**
 
 ```go
-// ❌ 错误：DomainService 调用 Save
+// ❌ Wrong: DomainService calling Save
 func (s *OrderDomainService) ProcessOrder(ctx context.Context, orderID string) error {
     order, _ := s.orderRepo.FindByID(ctx, orderID)
     order.MarkAsProcessing()
-    return s.orderRepo.Save(ctx, order)  // ❌ 禁止！DomainService 不能调用 Save
+    return s.orderRepo.Save(ctx, order)  // ❌ Forbidden! DomainService cannot call Save
 }
 
-// ✅ 正确：ApplicationService 负责持久化
+// ✅ Correct: ApplicationService is responsible for persistence
 func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
-    // 1. DomainService 只做验证（只读）
+    // 1. DomainService only does validation (read-only)
     order, err := s.orderDomainService.ValidateAndGetOrder(ctx, orderID)
     if err != nil {
         return err
     }
 
-    // 2. 修改状态
+    // 2. Modify status
     order.MarkAsProcessing()
 
-    // 3. ApplicationService 负责持久化
-    return s.orderRepo.Save(ctx, order)  // ✅ 正确位置
+    // 3. ApplicationService is responsible for persistence
+    return s.orderRepo.Save(ctx, order)  // ✅ Correct location
 }
 ```
 
-**为什么 Save 必须在 ApplicationService？**
-1. **事务边界** - 一个业务操作可能涉及多个 Save，事务管理是应用层职责
-2. **编排控制** - ApplicationService 决定"何时"、"是否"持久化
-3. **无副作用** - DomainService 保持纯粹，只做验证和计算，更易测试
-4. **单一职责** - 领域服务专注业务规则，应用服务专注流程协调
+**Why must Save be in ApplicationService?**
+1. **Transaction boundary** - A business operation may involve multiple Saves, transaction management is application layer responsibility
+2. **Orchestration control** - ApplicationService decides "when" and "whether" to persist
+3. **Side-effect free** - DomainService remains pure, only does validation and calculation, easier to test
+4. **Single responsibility** - Domain service focuses on business rules, application service focuses on process coordination
 
-#### 职责划分决策树
+#### Responsibility Division Decision Tree
 
 ```
-需要实现的业务逻辑
+Business logic to implement
     │
-    ├─► 【简单单个实体操作】→ 直接调用实体方法（在ApplicationService中）
+    ├─► 【Simple single entity operation】→ Directly call entity method (in ApplicationService)
     │
-    ├─► 【复杂单个实体逻辑】→ 封装为实体方法
+    ├─► 【Complex single entity logic】→ Encapsulate as entity method
     │
-    ├─► 【涉及多个实体/聚合】→ 判断复杂度
+    ├─► 【Involves multiple entities/aggregates】→ Determine complexity
     │   │
-    │   ├─► 只是编排顺序 → ApplicationService
+    │   ├─► Just orchestrating sequence → ApplicationService
     │   │
-    │   └─► 有复杂业务规则和计算 → DomainService ✓
+    │   └─► Has complex business rules and calculations → DomainService ✓
     │
-    └─► 【需要发布事件/事务管理】→ ApplicationService ✓
+    └─► 【Need to publish events/transaction management】→ ApplicationService ✓
 ```
 
-#### 总结对比
+#### Summary Comparison
 
-| 特征 | ApplicationService | DomainService |
+| Feature | ApplicationService | DomainService |
 |------|--------------------|---------------|
-| **职责** | 业务流程编排、事务管理 | 复杂业务规则验证和计算 |
-| **依赖** | Repository、DomainService、UoW | Repository（仅接口） |
-| **返回值** | DTO、错误信息 | 领域对象、基本类型、bool |
-| **事件处理** | 通过 UoW 保存到 outbox 表 | ❌ 不处理事件 |
-| **持久化调用** | ✅ 调用Repository.Save | ❌ 不调用Save |
-| **调用方** | Controller | ApplicationService |
+| **Responsibility** | Business process orchestration, transaction management | Complex business rule validation and calculation |
+| **Dependencies** | Repository, DomainService, UoW | Repository (interface only) |
+| **Return Values** | DTO, error information | Domain objects, basic types, bool |
+| **Event Handling** | Save to outbox table via UoW | ❌ Does not handle events |
+| **Persistence Calls** | ✅ Calls Repository.Save | ❌ Does not call Save |
+| **Called By** | Controller | ApplicationService |
 
-**重要说明**：
-- **事件处理**：UoW 收集聚合根事件保存到 outbox 表；跨聚合流程事件由 AppService 手动保存到 outbox；统一由 Message Relay 异步发布
-- **领域服务查询**：简单查询优先传入，业务逻辑查询可主动调用 Repository
-- **持久化操作**：Save/Update/Delete **只能**由 ApplicationService 调用，DomainService 绝对禁止
+**Important Notes**:
+- **Event Handling**: UoW collects aggregate root events to save to outbox table; cross-aggregate process events manually saved to outbox by AppService; uniformly published asynchronously by Message Relay
+- **Domain Service Queries**: Simple queries prefer passing in, business logic queries can actively call Repository
+- **Persistence Operations**: Save/Update/Delete **can only** be called by ApplicationService, absolutely forbidden for DomainService
 
-**记忆口诀**：
+**Memory Mnemonic**:
 
-> **"领域服务只读不写，应用服务管读写"**
+> **"Domain service reads but doesn't write, application service manages reads and writes"**
 >
-> **"简单实体直接调，复杂跨域用域服，所有接口过应用"**
+> **"Simple entities call directly, complex cross-domain uses domain service, all interfaces go through application"**
 
-- **简单操作** → ApplicationService → 调用实体方法 → 保存
-- **复杂业务** → ApplicationService → 调用DomainService（只读验证） → 保存
-- **所有入口** → 必须经过ApplicationService，不能绕过
+- **Simple operations** → ApplicationService → Call entity method → Save
+- **Complex business** → ApplicationService → Call DomainService (read-only validation) → Save
+- **All entry points** → Must go through ApplicationService, cannot bypass
 
-## 🌟 最佳实践
+## 🌟 Best Practices
 
-### 1. 保持领域模型纯净
+### 1. Keep Domain Model Pure
 
 ```go
-// ❌ 不推荐：在领域模型中依赖框架
+// ❌ Not recommended: Domain model depends on framework
 import "github.com/gin-gonic/gin"
 
 type User struct {
-    gin.Context  // 领域模型不应该依赖Web框架
+    gin.Context  // Domain model shouldn't depend on Web framework
     id           string
     name         string
 }
 
-// ✅ 推荐：领域模型只包含业务逻辑
+// ✅ Recommended: Domain model only contains business logic
 type User struct {
     id    string
     name  string
 }
 ```
 
-### 2. 使用明确的命名
+### 2. Use Clear Naming
 
 ```go
-// ❌ 不推荐：模糊的命名
+// ❌ Not recommended: Vague naming
 type User struct {
-    Status int  // 0, 1, 2 分别代表什么？
+    Status int  // What do 0, 1, 2 represent?
 }
 
-// ✅ 推荐：明确的命名
+// ✅ Recommended: Clear naming
 type UserStatus string
 
 const (
@@ -1354,14 +1356,14 @@ const (
 )
 
 type User struct {
-    status UserStatus  // 明确的业务含义
+    status UserStatus  // Clear business meaning
 }
 ```
 
-### 3. 封装业务规则
+### 3. Encapsulate Business Rules
 
 ```go
-// ❌ 不推荐：业务规则分散
+// ❌ Not recommended: Business rules scattered
 func (s *UserService) CreateUser(name string, age int) error {
     if age < 18 {
         return errors.New("user must be 18 or older")
@@ -1371,13 +1373,21 @@ func (s *UserService) CreateUser(name string, age int) error {
 
 func (s *UserService) CanUserPurchase(userID string) (bool, error) {
     user, _ := s.repo.FindByID(userID)
-    if user.Age < 18 {  // 重复的年龄验证逻辑
+    if user.Age < 18 {  // Duplicate age validation logic
+        return false, nil
+    }
+
+    return true, nil
+}
+```
+
+// ✅ Recommended: Business rules encapsulated within entity
         return false, nil
     }
     // ...
 }
 
-// ✅ 推荐：业务规则封装在实体内部
+// ✅ Recommended: Business rules encapsulated within entity
 func NewUser(name string, age int) (*User, error) {
     if age < 18 {
         return nil, ErrUserTooYoung
@@ -1386,14 +1396,14 @@ func NewUser(name string, age int) (*User, error) {
 }
 
 func (u *User) CanMakePurchase() bool {
-    return u.age >= 18 && u.isActive  // 业务规则封装
+    return u.age >= 18 && u.isActive  // Business rules encapsulated
 }
 ```
 
-### 4. 使用领域事件解耦
+### 4. Use Domain Events for Decoupling
 
 ```go
-// 在实体中发布领域事件
+// Publish domain events in entity
 func (u *User) Deactivate() {
     if !u.isActive {
         return
@@ -1402,37 +1412,37 @@ func (u *User) Deactivate() {
     u.isActive = false
     u.updatedAt = time.Now()
     
-    // 发布领域事件
+    // Publish domain event
     event := NewUserDeactivatedEvent(u.id, u.name)
-    // 事件发布逻辑...
+    // Event publishing logic...
 }
 
-// 在应用层处理事件
+// Handle events in application layer
 type UserDeactivatedHandler struct {
     emailService EmailService
 }
 
 func (h *UserDeactivatedHandler) Handle(event UserDeactivatedEvent) {
-    // 发送通知邮件
-    h.emailService.SendEmail(event.GetUserID(), "您的账户已停用")
+    // Send notification email
+    h.emailService.SendEmail(event.GetUserID(), "Your account has been deactivated")
 }
 ```
 
-### 5. 编写领域专用语言
+### 5. Write Domain-Specific Language
 
 ```go
-// 使用业务术语而非技术术语
+// Use business terms rather than technical terms
 type OrderStatus string
 
 const (
-    OrderStatusPending   OrderStatus = "pending"    // 待处理
-    OrderStatusConfirmed OrderStatus = "confirmed"  // 已确认
-    OrderStatusShipped   OrderStatus = "shipped"    // 已发货
-    OrderStatusDelivered OrderStatus = "delivered"  // 已送达
-    OrderStatusCancelled OrderStatus = "cancelled"  // 已取消
+    OrderStatusPending   OrderStatus = "pending"    // Pending
+    OrderStatusConfirmed OrderStatus = "confirmed"  // Confirmed
+    OrderStatusShipped   OrderStatus = "shipped"    // Shipped
+    OrderStatusDelivered OrderStatus = "delivered"  // Delivered
+    OrderStatusCancelled OrderStatus = "cancelled"  // Cancelled
 )
 
-// 使用业务方法名
+// Use business method names
 func (o *Order) Confirm() error {
     if o.status != OrderStatusPending {
         return ErrOrderCannotBeConfirmed
@@ -1452,29 +1462,160 @@ func (o *Order) Ship() error {
 }
 ```
 
-## ⚠️ 常见误区
+## ⚠️ Common Pitfalls
 
-### 1. 过度工程化
+### 1. Over-Engineering
 
 ```go
-// ❌ 过度设计：为简单的CRUD操作创建复杂的领域模型
+// ❌ Over-design: Creating complex domain models for simple CRUD operations
 
-// 简单的配置数据，不需要DDD
+// Simple configuration data, doesn't need DDD
 type AppConfig struct {
     Name        string
     Version     string
     Description string
 }
 
-// 使用简单的结构体即可，不需要实体、值对象等
+// Use simple structs, no need for entities, value objects, etc.
 ```
 
-**建议**: DDD适用于复杂的业务逻辑，简单的CRUD操作不需要过度设计。
+**Suggestion**: DDD is suitable for complex business logic, simple CRUD operations don't need over-designing.
 
-### 2. 贫血领域模型
+### 2. Anemic Domain Model
 
 ```go
-// ❌ 伪DDD：实体只包含数据，没有行为
+// ❌ Pseudo-DDD: Entity only contains data, no behavior
+type User struct {
+    ID       string
+    Name     string
+    Email    string
+    IsActive bool
+}
+
+// All logic is in service layer
+func (s *UserService) DeactivateUser(userID string) error {
+    user, err := s.repo.FindByID(userID)
+    if err != nil {
+        return err
+    }
+    user.IsActive = false  // Directly modifying state without encapsulation
+    return s.repo.Save(user)
+}
+```
+
+**Suggestion**: Entities should encapsulate business logic and provide meaningful behavior methods.
+
+### 3. Domain Layer Depends on Infrastructure
+
+```go
+// ❌ Domain layer depends on database
+type User struct {
+    db *sql.DB  // Domain model shouldn't depend on database
+}
+
+// ❌ Domain layer depends on HTTP framework
+type Order struct {
+    ctx *gin.Context  // Domain model shouldn't depend on Web framework
+}
+```
+
+**Suggestion**: Keep domain layer pure, only contains business logic.
+
+### 4. Ignoring Aggregate Boundaries
+
+```go
+// ❌ Ignoring aggregate boundaries, directly modifying internal entities
+type Order struct {
+    ID    string
+    Items []OrderItem  // Directly exposing internal entities
+}
+
+// External can directly modify order items
+order.Items[0].Quantity = 100  // Circumvents order's business rules
+```
+
+**Suggestion**: Manage internal entities through aggregate root, maintain business consistency.
+
+### 5. Overusing Domain Services
+
+```go
+// ❌ Domain service contains simple CRUD logic
+type UserDomainService struct {
+    repo UserRepository
+}
+
+func (s *UserDomainService) CreateUser(name string, age int) error {
+    // Simple creation logic, should be in entity factory
+    user := &User{Name: name, Age: age}
+    return s.repo.Save(user)
+}
+
+func (s *UserDomainService) GetUser(id string) (*User, error) {
+    // Simple query logic, shouldn't be in domain service
+    return s.repo.FindByID(id)
+}
+```
+
+**Suggestion**: Domain services should only contain complex business logic across entities.
+
+## 📚 Learning Resources
+
+### Recommended Books
+1. "Domain-Driven Design" - Eric Evans (DDD foundational work)
+2. "Implementing Domain-Driven Design" - Vaughn Vernon (practical guide)
+3. "Domain-Driven Design Patterns, Principles and Practices" - Scott Millett
+4. "Domain-Driven Design Distilled" - Vaughn Vernon (concise version)
+
+### Online Resources
+1. [DDD Community](https://dddcommunity.org/)
+2. [Martin Fowler's DDD Articles](https://martinfowler.com/tags/domain%20driven%20design.html)
+3. [Vaughn Vernon's DDD Blog](https://vaughnvernon.co/)
+
+### Open Source Projects
+1. [DDD Sample](https://github.com/citerus/dddsample-core)
+2. [eShopOnContainers](https://github.com/dotnet-architecture/eShopOnContainers)
+
+## 🎯 Summary
+
+The core value of DDD lies in:
+
+1. **Business-oriented**: Code directly reflects business concepts
+2. **High cohesion**: Related logic encapsulated together
+3. **Low coupling**: Clear responsibilities and dependencies across layers
+4. **Maintainable**: Centralized business logic, easy to modify
+5. **Testable**: Domain logic can be tested independently
+
+Through practice in this project, you can:
+- Understand DDD core concepts
+- Master the transformation from anemic model to DDD
+- Learn how to organize DDD project structure
+- Avoid common DDD pitfalls
+
+Remember: DDD is not a silver bullet, it's suitable for complex business scenarios. For simple CRUD applications, traditional anemic models may be more appropriate. The key is to choose the right architecture pattern based on business complexity.
+
+**Happy DDD Coding! 🚀**
+
+### 1. Over-Engineering
+
+```go
+// ❌ Over-design: Creating complex domain models for simple CRUD operations
+
+// Simple configuration data, doesn't need DDD
+type AppConfig struct {
+    Name        string
+    Version     string
+    Description string
+}
+
+// Use simple structs, no need for entities, value objects, etc.
+```
+
+**Suggestion**: DDD is suitable for complex business logic, simple CRUD operations don't need over-designing.
+
+### 2. Anemic Domain Model
+
+```go
+// ❌ Pseudo-DDD: Entity only contains data, no behavior
 type User struct {
     ID       string
     Name     string
@@ -1488,99 +1629,99 @@ func (s *UserService) DeactivateUser(userID string) error {
     if err != nil {
         return err
     }
-    user.IsActive = false  // 直接修改状态，没有封装
+    user.IsActive = false  // Directly modifying state without encapsulation
     return s.repo.Save(user)
 }
 ```
 
-**建议**: 实体应该封装业务逻辑，提供有意义的行为方法。
+**Suggestion**: Entities should encapsulate business logic and provide meaningful behavior methods.
 
-### 3. 领域层依赖基础设施
+### 3. Domain Layer Depends on Infrastructure
 
 ```go
-// ❌ 领域层依赖数据库
+// ❌ Domain layer depends on database
 type User struct {
-    db *sql.DB  // 领域模型不应该依赖数据库
+    db *sql.DB  // Domain model shouldn't depend on database
 }
 
-// ❌ 领域层依赖HTTP框架
+// ❌ Domain layer depends on HTTP framework
 type Order struct {
-    ctx *gin.Context  // 领域模型不应该依赖Web框架
+    ctx *gin.Context  // Domain model shouldn't depend on Web framework
 }
 ```
 
-**建议**: 保持领域层纯净，只包含业务逻辑。
+**Suggestion**: Keep domain layer pure, only contains business logic.
 
-### 4. 忽略聚合边界
+### 4. Ignoring Aggregate Boundaries
 
 ```go
-// ❌ 忽略聚合边界，直接修改内部实体
+// ❌ Ignoring aggregate boundaries, directly modifying internal entities
 type Order struct {
     ID    string
-    Items []OrderItem  // 直接暴露内部实体
+    Items []OrderItem  // Directly exposing internal entities
 }
 
-// 外部可以直接修改订单项
-order.Items[0].Quantity = 100  // 绕过了订单的业务规则
+// External can directly modify order items
+order.Items[0].Quantity = 100  // Circumvents order's business rules
 ```
 
-**建议**: 通过聚合根管理内部实体，维护业务一致性。
+**Suggestion**: Manage internal entities through aggregate root, maintain business consistency.
 
-### 5. 过度使用领域服务
+### 5. Overusing Domain Services
 
 ```go
-// ❌ 领域服务包含简单的CRUD逻辑
+// ❌ Domain service contains simple CRUD logic
 type UserDomainService struct {
     repo UserRepository
 }
 
 func (s *UserDomainService) CreateUser(name string, age int) error {
-    // 简单的创建逻辑，应该放在实体工厂中
+    // Simple creation logic, should be in entity factory
     user := &User{Name: name, Age: age}
     return s.repo.Save(user)
 }
 
 func (s *UserDomainService) GetUser(id string) (*User, error) {
-    // 简单的查询逻辑，不应该在领域服务中
+    // Simple query logic, shouldn't be in domain service
     return s.repo.FindByID(id)
 }
 ```
 
-**建议**: 领域服务只应该包含跨实体的复杂业务逻辑。
+**Suggestion**: Domain services should only contain complex business logic across entities.
 
-## 📚 学习资源
+## 📚 Learning Resources
 
-### 推荐书籍
-1. 《领域驱动设计》- Eric Evans (DDD开山之作)
-2. 《实现领域驱动设计》- Vaughn Vernon (实践指南)
-3. 《领域驱动设计模式、原理与实践》- Scott Millett
-4. 《领域驱动设计精粹》- Vaughn Vernon (精简版)
+### Recommended Books
+1. "Domain-Driven Design" - Eric Evans (DDD foundational work)
+2. "Implementing Domain-Driven Design" - Vaughn Vernon (practical guide)
+3. "Domain-Driven Design Patterns, Principles and Practices" - Scott Millett
+4. "Domain-Driven Design Distilled" - Vaughn Vernon (concise version)
 
-### 在线资源
+### Online Resources
 1. [DDD Community](https://dddcommunity.org/)
-2. [Martin Fowler的DDD文章](https://martinfowler.com/tags/domain%20driven%20design.html)
-3. [Vaughn Vernon的DDD博客](https://vaughnvernon.co/)
+2. [Martin Fowler's DDD Articles](https://martinfowler.com/tags/domain%20driven%20design.html)
+3. [Vaughn Vernon's DDD Blog](https://vaughnvernon.co/)
 
-### 开源项目
+### Open Source Projects
 1. [DDD Sample](https://github.com/citerus/dddsample-core)
 2. [eShopOnContainers](https://github.com/dotnet-architecture/eShopOnContainers)
 
-## 🎯 总结
+## 🎯 Summary
 
-DDD的核心价值在于：
+The core value of DDD lies in:
 
-1. **业务导向**: 代码直接反映业务概念
-2. **高内聚**: 相关逻辑封装在一起
-3. **低耦合**: 各层职责清晰，依赖明确
-4. **可维护**: 业务逻辑集中，易于修改
-5. **可测试**: 领域逻辑可以独立测试
+1. **Business-oriented**: Code directly reflects business concepts
+2. **High cohesion**: Related logic encapsulated together
+3. **Low coupling**: Clear responsibilities and dependencies across layers
+4. **Maintainable**: Centralized business logic, easy to modify
+5. **Testable**: Domain logic can be tested independently
 
-通过本项目的实践，你可以：
-- 理解DDD的核心概念
-- 掌握从贫血模式到DDD的转变方法
-- 学会如何组织DDD项目结构
-- 避免常见的DDD误区
+Through practice in this project, you can:
+- Understand DDD core concepts
+- Master the transformation from anemic model to DDD
+- Learn how to organize DDD project structure
+- Avoid common DDD pitfalls
 
-记住：DDD不是银弹，它适用于复杂的业务场景。对于简单的CRUD应用，传统的贫血模式可能更合适。关键是根据业务复杂度选择合适的架构模式。
+Remember: DDD is not a silver bullet, it's suitable for complex business scenarios. For simple CRUD applications, traditional anemic models may be more appropriate. The key is to choose the right architecture pattern based on business complexity.
 
 **Happy DDD Coding! 🚀**

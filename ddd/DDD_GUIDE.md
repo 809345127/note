@@ -1,86 +1,92 @@
-# DDD实践指南
+# DDD Practice Guide
 
-本文档是DDD示例项目的实践指南，详细讲解项目中各个DDD模式的正确实现方式。
+This document is a practical guide for the DDD example project, explaining the correct implementation of each DDD pattern in the project in detail.
 
 ---
 
-## 项目架构
+## Project Architecture
 
-### 标准DDD分层架构
+### Standard DDD Layered Architecture
 
 ```
 ddd/
-├── domain/                 # 领域层（核心层，不依赖任何其他层）
-│   ├── user.go             # 用户聚合根
-│   ├── order.go            # 订单聚合根
-│   ├── value_objects.go    # 值对象
-│   ├── services.go         # 领域服务
-│   ├── events.go           # 领域事件
-│   ├── repositories.go     # 仓储接口
-│   ├── aggregate.go        # 聚合标记接口
-│   ├── event_publisher.go  # 事件发布接口
-│   ├── unit_of_work.go     # 工作单元接口
-│   └── tx_unit_of_work.go  # 事务工作单元
-├── service/                # 应用层（依赖domain层）
-├── api/                    # 表示层（依赖service层）
-├── infrastructure/         # 基础设施层（实现domain层定义的接口）
+├── domain/                 # Domain Layer (Core layer, no dependencies on other layers)
+│   ├── user.go             # User Aggregate Root
+│   ├── order.go            # Order Aggregate Root
+│   ├── value_objects.go    # Value Objects
+│   ├── services.go         # Domain Services
+│   ├── events.go           # Domain Events
+│   ├── repositories.go     # Repository Interfaces
+│   ├── aggregate.go        # Aggregate Marker Interface
+│   ├── event_publisher.go  # Event Publisher Interface
+│   ├── unit_of_work.go     # Unit of Work Interface
+│   └── tx_unit_of_work.go  # Transactional Unit of Work
+├── application/            # Application Layer (depends on domain layer)
+├── api/                    # Presentation Layer (depends on application layer)
+│   ├── router.go
+│   ├── health/             # Health Check Controller
+│   ├── user/               # User Controller
+│   ├── order/              # Order Controller
+│   ├── middleware/         # Request ID, Logging, Recovery, CORS, Rate Limiting
+│   └── response/           # Unified Response Wrapper
+├── infrastructure/         # Infrastructure Layer (implements interfaces defined in domain layer)
 │   └── persistence/
-│       ├── mocks/          # Mock仓储实现
-│       └── mysql/          # MySQL仓储实现
-└── cmd/                    # 应用入口
+│       ├── mocks/          # Mock Repository Implementations
+│       └── mysql/          # MySQL Repository Implementations
+└── cmd/                    # Application Entry Point
 ```
 
-### 依赖方向
+### Dependency Direction
 
 ```
 ┌─────────────────────────────────┐
-│   表示层 (api)                  │
-│   处理HTTP请求/响应             │
+│   Presentation Layer (api)      │
+│   Handles HTTP requests/responses │
 └────────────┬────────────────────┘
-             │ 依赖
+             │ Depends on
 ┌────────────▼────────────────────┐
-│   应用层 (service)              │
-│   编排业务流程、使用UnitOfWork  │
+│   Application Layer (service)   │
+│   Orchestrates business processes, uses UnitOfWork │
 └────────────┬────────────────────┘
-             │ 依赖
+             │ Depends on
 ┌────────────▼────────────────────┐
-│   领域层 (domain)               │  ◄─ 核心层（纯净，不依赖任何层）
-│   业务逻辑、实体、聚合根        │
+│   Domain Layer (domain)         │  ◄─ Core layer (pure, no dependencies)
+│   Business logic, entities, aggregate roots │
 └────────────┬────────────────────┘
-             │ 依赖倒置（通过接口）
+             │ Dependency Inversion (via interfaces)
 ┌────────────▼────────────────────┐
-│   基础设施层 (infrastructure)   │
-│   技术实现（仓储、事件发布）    │
+│   Infrastructure Layer (infrastructure) │
+│   Technical implementation (repositories, event publishing) │
 └─────────────────────────────────┘
 ```
 
-**核心原则**：领域层是项目的核心，它不依赖任何框架或技术实现。基础设施层通过实现领域层定义的接口来提供具体实现。
+**Core Principle**: The domain layer is the core of the project, it doesn't depend on any frameworks or technical implementations. The infrastructure layer provides concrete implementations by implementing interfaces defined in the domain layer.
 
 ---
 
-## 聚合根（Aggregate Root）
+## Aggregate Root
 
-聚合根是DDD的核心概念，它定义了一组相关对象的一致性边界。
+Aggregate root is a core concept in DDD, it defines the consistency boundary for a group of related objects.
 
-### Order聚合根示例
+### Order Aggregate Root Example
 
 ```go
 // domain/order.go
 type Order struct {
     id          string
     userID      string
-    items       []OrderItem           // 聚合内部实体（私有）
+    items       []OrderItem           // Aggregate internal entity (private)
     totalAmount Money
     status      OrderStatus
-    version     int                   // 乐观锁版本号
+    version     int                   // Optimistic locking version number
     createdAt   time.Time
     updatedAt   time.Time
-    events      []DomainEvent         // 领域事件列表
+    events      []DomainEvent         // Domain event list
 }
 
-// 聚合内部实体（非聚合根，只能通过Order访问）
+// Aggregate internal entity (non-aggregate root, can only be accessed through Order)
 type OrderItem struct {
-    id          string  // 仅在聚合内唯一
+    id          string  // Only unique within the aggregate
     productID   string
     productName string
     quantity    int
@@ -89,19 +95,19 @@ type OrderItem struct {
 }
 ```
 
-### 聚合边界保护
+### Aggregate Boundary Protection
 
-所有对聚合内部实体的修改必须通过聚合根进行：
+All modifications to aggregate internal entities must go through the aggregate root:
 
 ```go
-// 通过聚合根方法添加订单项
+// Add order item through aggregate root method
 func (o *Order) AddItem(productID, productName string, quantity int, unitPrice Money) error {
-    // 1. 验证聚合不变量
+    // 1. Verify aggregate invariants
     if o.status != OrderStatusPending {
         return errors.New("can only add items to pending orders")
     }
 
-    // 2. 创建聚合内部实体
+    // 2. Create aggregate internal entity
     item := OrderItem{
         id:          uuid.New().String(),
         productID:   productID,
@@ -113,14 +119,14 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice M
 
     o.items = append(o.items, item)
 
-    // 3. 维护聚合一致性
+    // 3. Maintain aggregate consistency
     o.recalculateTotalAmount()
     o.updatedAt = time.Now()
 
     return nil
 }
 
-// Items()返回副本，防止外部直接修改
+// Items() returns copy to prevent external direct modification
 func (o *Order) Items() []OrderItem {
     items := make([]OrderItem, len(o.items))
     copy(items, o.items)
@@ -128,48 +134,48 @@ func (o *Order) Items() []OrderItem {
 }
 ```
 
-### 聚合标记接口
+### Aggregate Marker Interface
 
 ```go
 // domain/aggregate.go
 type AggregateRoot interface {
     ID() string
     Version() int
-    PullEvents() []DomainEvent  // 获取并清空事件
+    PullEvents() []DomainEvent  // Get and clear events
 }
 
-// 编译时验证
+// Compile-time validation
 var _ = IsAggregateRoot(&User{})
 var _ = IsAggregateRoot(&Order{})
 ```
 
 ---
 
-## 领域事件（Domain Event）
+## Domain Event
 
-领域事件记录业务系统中发生的重要事件，用于解耦和异步处理。
+Domain events record important events that occur in the business system, used for decoupling and asynchronous processing.
 
-### 核心原则
+### Core Principles
 
-1. **聚合根产生事件**：在状态变更时记录事件到内存
-2. **UoW 统一保存事件**：在事务提交前，将事件与业务数据一起落库（Outbox Pattern）
-3. **事务提交后发布**：后台进程异步读取 outbox 表发布到消息队列
+1. **Aggregate roots generate events**: Record events to memory when state changes
+2. **UoW saves events uniformly**: Before transaction commit, persist events with business data together (Outbox Pattern)
+3. **Publish after transaction commit**: Background processes asynchronously read outbox table and publish to message queue
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  UnitOfWork.Execute()                                   │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │ BEGIN TRANSACTION                                 │  │
-│  │   repo.Save(order)    → 保存聚合根数据            │  │
-│  │   outbox.Save(events) → 保存事件到outbox表        │  │
+│  │   repo.Save(order)    → Save aggregate root data  │  │
+│  │   outbox.Save(events) → Save events to outbox table│ │
 │  │ COMMIT                                            │  │
 │  └───────────────────────────────────────────────────┘  │
 │                                                         │
-│  后台进程轮询 outbox 表 → 发布到消息队列 → 删除已发送记录 │
+│  Background process polls outbox table → Publish to message queue → Delete sent records│
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 聚合根产生事件
+### Aggregate Root Generates Events
 
 ```go
 // domain/order.go
@@ -183,15 +189,15 @@ func NewOrder(userID string, requests []OrderItemRequest) (*Order, error) {
         updatedAt: time.Now(),
     }
 
-    // ... 添加订单项
+    // ... Add order items
 
-    // 记录领域事件
+    // Record domain event
     order.events = append(order.events, NewOrderPlacedEvent(order.id, userID, order.totalAmount))
 
     return order, nil
 }
 
-// 状态变更时记录事件
+// Record events when state changes
 func (o *Order) Confirm() error {
     if o.status != OrderStatusPending {
         return errors.New("only pending orders can be confirmed")
@@ -200,12 +206,12 @@ func (o *Order) Confirm() error {
     o.updatedAt = time.Now()
     o.version++
 
-    // 记录事件
+    // Record event
     o.events = append(o.events, NewOrderConfirmedEvent(o.id))
     return nil
 }
 
-// 获取并清空事件（仅供仓储调用）
+// Get and clear events (for repository use only)
 func (o *Order) PullEvents() []DomainEvent {
     events := o.events
     o.events = nil
@@ -213,9 +219,9 @@ func (o *Order) PullEvents() []DomainEvent {
 }
 ```
 
-### 为什么不在仓储中直接发布事件？
+### Why Not Publish Events Directly in Repository?
 
-**错误示例（不要这样做）：**
+**Incorrect Example (Don't do this):**
 
 ```go
 func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
@@ -223,38 +229,38 @@ func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
     if err != nil {
         return err
     }
-    // ❌ 错误：事务可能还未提交，或后续操作失败导致回滚
-    // 但事件已经发出去了，造成数据不一致！
+    // ❌ Error: Transaction may not be committed yet, or subsequent operations may fail causing rollback
+    // But the event has already been sent, causing data inconsistency!
     r.eventPublisher.Publish(user.PullEvents())
     return nil
 }
 ```
 
-**问题：** 事务是在应用服务层（通过 UoW）管理的，仓储只是事务中的一环。如果在 repo.Save() 中直接发布事件，可能出现：
-1. 事务还没提交，事件就发出去了
-2. 后续操作失败导致事务回滚，但事件已经被消费
+**Problem:** Transactions are managed at the application service layer (through UoW), and repositories are just one part of the transaction. If events are published directly in repo.Save(), the following issues may occur:
+1. Events are sent out before the transaction is committed
+2. Subsequent operations fail causing transaction rollback, but events have already been consumed
 
-**正确做法：** 由 UoW 在事务提交前统一保存事件到 outbox 表，事务提交后由后台进程异步发布。
+**Correct Approach:** Let UoW uniformly save events to outbox table before transaction commit, and have background processes publish asynchronously after transaction commit.
 
 ---
 
-## 工作单元（Unit of Work）
+## Unit of Work
 
-工作单元模式用于管理事务边界，确保多个聚合操作的一致性，并统一处理领域事件的持久化。
+The Unit of Work pattern is used to manage transaction boundaries, ensure consistency of multiple aggregate operations, and uniformly handle persistence of domain events.
 
-### 接口定义
+### Interface Definition
 
 ```go
 // domain/unit_of_work.go
 type UnitOfWork interface {
-    Execute(fn func() error) error  // 自动管理事务
+    Execute(fn func() error) error  // Automatically manage transactions
     RegisterNew(aggregate AggregateRoot)
     RegisterDirty(aggregate AggregateRoot)
     RegisterRemoved(aggregate AggregateRoot)
 }
 ```
 
-### UoW 实现（含 Outbox Pattern）
+### UoW Implementation (with Outbox Pattern)
 
 ```go
 // infrastructure/unit_of_work.go
@@ -265,7 +271,7 @@ type UnitOfWorkImpl struct {
 }
 
 func (uow *UnitOfWorkImpl) Execute(fn func() error) error {
-    // 1. 开启事务
+    // 1. Start transaction
     tx, err := uow.db.Begin()
     if err != nil {
         return err
@@ -273,13 +279,13 @@ func (uow *UnitOfWorkImpl) Execute(fn func() error) error {
     uow.tx = tx
     uow.aggregates = nil
 
-    // 2. 执行业务逻辑
+    // 2. Execute business logic
     if err := fn(); err != nil {
         tx.Rollback()
         return err
     }
 
-    // 3. 收集所有聚合根的事件，保存到 outbox 表（同一事务）
+    // 3. Collect all aggregate root events, save to outbox table (same transaction)
     for _, agg := range uow.aggregates {
         events := agg.PullEvents()
         for _, event := range events {
@@ -295,7 +301,7 @@ func (uow *UnitOfWorkImpl) Execute(fn func() error) error {
         }
     }
 
-    // 4. 提交事务（业务数据 + 事件一起提交，保证原子性）
+    // 4. Commit transaction (business data + events committed together, ensuring atomicity)
     return tx.Commit()
 }
 
@@ -304,16 +310,16 @@ func (uow *UnitOfWorkImpl) RegisterNew(agg domain.AggregateRoot) {
 }
 ```
 
-### 应用层使用示例
+### Application Layer Usage Example
 
 ```go
-// service/order_service.go
+// application/order/service.go
 func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderResponse, error) {
     var order *domain.Order
 
-    // 使用工作单元管理事务
+    // Use Unit of Work to manage transaction
     err := s.uow.Execute(func() error {
-        // 1. 验证用户是否可以下单
+        // 1. Verify if user can place order
         user, err := s.userRepo.FindByID(req.UserID)
         if err != nil {
             return err
@@ -323,29 +329,29 @@ func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderRes
             return errors.New("user cannot make purchases")
         }
 
-        // 2. 创建订单聚合根（聚合根内部记录事件）
+        // 2. Create order aggregate root (aggregate root records events internally)
         order, err = domain.NewOrder(req.UserID, req.Items)
         if err != nil {
             return err
         }
 
-        // 3. 保存聚合根
+        // 3. Save aggregate root
         if err := s.orderRepo.Save(order); err != nil {
             return err
         }
 
-        // 4. 注册到工作单元（UoW 会在提交前收集事件）
+        // 4. Register with Unit of Work (UoW will collect events before commit)
         s.uow.RegisterNew(order)
 
         return nil
     })
 
-    // Execute 自动处理：
-    // - 开始事务（Begin）
-    // - 执行业务操作
-    // - 收集聚合根事件，保存到 outbox 表
-    // - 提交事务（业务数据 + 事件原子提交）
-    // - 失败则回滚事务
+    // Execute handles automatically:
+    // - Start transaction (Begin)
+    // - Execute business operations
+    // - Collect aggregate root events, save to outbox table
+    // - Commit transaction (business data + events atomically committed)
+    // - Rollback transaction on failure
 
     if err != nil {
         return nil, err
@@ -355,7 +361,7 @@ func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderRes
 }
 ```
 
-### Outbox 表结构
+### Outbox Table Structure
 
 ```sql
 CREATE TABLE outbox (
@@ -369,56 +375,56 @@ CREATE TABLE outbox (
 );
 ```
 
-### 事件发布：Message Relay（独立后台服务）
+### Event Publishing: Message Relay (Independent Background Service)
 
-**重要：Application Service 不负责 Publish Event，只负责 Save Event 到 outbox 表。**
+**Important: Application Service is not responsible for Publishing Events, only for Saving Events to the outbox table.**
 
-实际发布由独立的后台服务（Message Relay）完成，常见实现方式：
+Actual publishing is completed by an independent background service (Message Relay). Common implementation methods:
 
-| 方式 | 延迟 | 复杂度 | 说明 |
-|-----|------|-------|------|
-| Polling（轮询） | 秒级 | 低 | 简单但有延迟 |
-| CDC（Change Data Capture） | 毫秒级 | 高 | 推荐，如 Debezium |
-| JIT Polling | 可控 | 中 | 混合方式，兼顾延迟和简单性 |
+| Method | Latency | Complexity | Description |
+|--------|---------|------------|-------------|
+| Polling | Seconds | Low | Simple but with latency |
+| CDC (Change Data Capture) | Milliseconds | High | Recommended, like Debezium |
+| JIT Polling | Controllable | Medium | Hybrid approach, balancing latency and simplicity |
 
-#### JIT Polling 实现（推荐）
+#### JIT Polling Implementation (Recommended)
 
 ```go
 // infrastructure/outbox_processor.go
 type OutboxProcessor struct {
     db           *sql.DB
     messageQueue MessageQueue
-    triggerCh    chan struct{}  // 用于接收立即处理通知
+    triggerCh    chan struct{}  // Used to receive immediate processing notifications
 }
 
 func NewOutboxProcessor(db *sql.DB, mq MessageQueue) *OutboxProcessor {
     return &OutboxProcessor{
         db:           db,
         messageQueue: mq,
-        triggerCh:    make(chan struct{}, 1),  // 带缓冲，避免阻塞
+        triggerCh:    make(chan struct{}, 1),  // With buffer to avoid blocking
     }
 }
 
-// NotifyNewMessages 通知处理器有新消息，可立即处理（非阻塞）
+// NotifyNewMessages notifies the processor of new messages, can process immediately (non-blocking)
 func (p *OutboxProcessor) NotifyNewMessages() {
     select {
     case p.triggerCh <- struct{}{}:
-    default:  // 已有通知在等待，无需重复
+    default:  // Notification already waiting, no need to repeat
     }
 }
 
-// Run 启动后台处理循环
+// Run starts the background processing loop
 func (p *OutboxProcessor) Run(ctx context.Context) {
-    ticker := time.NewTicker(5 * time.Second)  // 定时兜底
+    ticker := time.NewTicker(5 * time.Second)  // Periodic fallback
     defer ticker.Stop()
 
     for {
         select {
         case <-ctx.Done():
             return
-        case <-p.triggerCh:    // 立即触发
+        case <-p.triggerCh:    // Immediate trigger
             p.processOutbox()
-        case <-ticker.C:       // 定时兜底（防止通知丢失）
+        case <-ticker.C:       // Periodic fallback (prevent notification loss)
             p.processOutbox()
         }
     }
@@ -442,34 +448,34 @@ func (p *OutboxProcessor) processOutbox() {
             continue
         }
 
-        // 发布到消息队列
+        // Publish to message queue
         if err := p.messageQueue.Publish(eventType, payload); err != nil {
             log.Printf("Failed to publish event %d: %v", id, err)
             continue
         }
 
-        // 标记为已发布
+        // Mark as published
         p.db.Exec("UPDATE outbox SET published_at = NOW() WHERE id = ?", id)
     }
 }
 ```
 
-#### 应用服务配合 JIT Polling
+#### Application Service with JIT Polling
 
 ```go
-// service/order_service.go
+// application/order/service.go
 type OrderApplicationService struct {
     uow             domain.UnitOfWork
     orderRepo       domain.OrderRepository
-    outboxProcessor *infrastructure.OutboxProcessor  // 持有处理器引用
+    outboxProcessor *infrastructure.OutboxProcessor  // Holds processor reference
 }
 
 func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderResponse, error) {
     var order *domain.Order
 
     err := s.uow.Execute(func() error {
-        // ... 业务逻辑（创建订单、保存聚合根）
-        // UoW 会在事务中保存事件到 outbox 表
+        // ... Business logic (create order, save aggregate root)
+        // UoW will save events to outbox table in transaction
         return nil
     })
 
@@ -477,75 +483,75 @@ func (s *OrderApplicationService) CreateOrder(req CreateOrderRequest) (*OrderRes
         return nil, err
     }
 
-    // 事务成功后，通知处理器有新消息（非阻塞，可选）
-    // 注意：这里只是"通知"，不是直接发布
+    // After transaction success, notify processor of new messages (non-blocking, optional)
+    // Note: This is just a "notification", not direct publishing
     s.outboxProcessor.NotifyNewMessages()
 
     return s.convertToResponse(order), nil
 }
 ```
 
-### 职责总结
+### Responsibility Summary
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  角色                      │  职责                                  │
+│  Role                      │  Responsibility                          │
 ├─────────────────────────────────────────────────────────────────────┤
-│  聚合根                    │  产生事件，暂存在内存                   │
-│  UoW                       │  事务管理，Save Event 到 outbox 表     │
-│  Application Service       │  业务编排，可通知处理器（不直接发布）   │
-│  Message Relay（独立进程） │  从 outbox 读取，Publish 到消息队列    │
+│  Aggregate Root            │  Generate events, temporarily store in memory │
+│  UoW                       │  Transaction management, Save Event to outbox table │
+│  Application Service       │  Business orchestration, can notify processor (not direct publish) │
+│  Message Relay (Independent Process) │  Read from outbox, Publish to message queue │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**核心原则：Application Service 不直接 Publish Event。**
+**Core Principle: Application Service does not directly Publish Events.**
 
 ---
 
-## 仓储（Repository）
+## Repository
 
-仓储提供聚合根的持久化抽象。
+Repository provides persistence abstraction for aggregate roots.
 
-### 接口设计原则
+### Interface Design Principles
 
 ```go
 // domain/repositories.go
 type OrderRepository interface {
-    // ID生成
+    // ID Generation
     NextIdentity() string
 
-    // 基本操作（聚合根级别）
+    // Basic Operations (aggregate root level)
     Save(ctx context.Context, order *Order) error
     FindByID(ctx context.Context, id string) (*Order, error)
-    Remove(ctx context.Context, id string) error  // 逻辑删除
+    Remove(ctx context.Context, id string) error  // Logical deletion
 
-    // 受控查询（限定范围）
+    // Controlled Queries (limited scope)
     FindByUserID(ctx context.Context, userID string) ([]*Order, error)
 }
 ```
 
-### 仓储职责
+### Repository Responsibilities
 
-**应该做**：
-- 只持久化聚合根（整个聚合一起保存）
-- 提供领域语义的查询接口
-- 保证聚合的原子性操作
+**Should Do**:
+- Only persist aggregate roots (save entire aggregate together)
+- Provide query interfaces with domain semantics
+- Ensure atomic operations of aggregates
 
-**不应该做**：
-- 暴露底层存储细节（SQL语句等）
-- 允许绕过聚合根修改内部实体
-- 提供批量操作（如FindAll）
-- 包含业务逻辑
-- 直接发布领域事件（这是 UoW 的职责）
+**Should Not Do**:
+- Expose underlying storage details (SQL statements, etc.)
+- Allow bypassing aggregate root to modify internal entities
+- Provide batch operations (like FindAll)
+- Contain business logic
+- Directly publish domain events (this is UoW's responsibility)
 
-### 逻辑删除
+### Logical Deletion
 
-DDD推荐使用逻辑删除，保留业务历史：
+DDD recommends using logical deletion to preserve business history:
 
 ```go
 // infrastructure/persistence/mysql/order_repository.go
 func (r *OrderRepository) Remove(ctx context.Context, id string) error {
-    // 逻辑删除：标记为已取消
+    // Logical deletion: mark as cancelled
     _, err := r.db.ExecContext(ctx, `
         UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?
     `, string(domain.OrderStatusCancelled), id)
@@ -555,11 +561,11 @@ func (r *OrderRepository) Remove(ctx context.Context, id string) error {
 
 ---
 
-## 领域服务 vs 应用服务
+## Domain Service vs Application Service
 
-### 领域服务
+### Domain Service
 
-处理跨实体的业务规则，**不负责持久化和事件发布**：
+Handles cross-entity business rules, **not responsible for persistence and event publishing**:
 
 ```go
 // domain/services.go
@@ -568,7 +574,7 @@ type OrderDomainService struct {
     orderRepository OrderRepository
 }
 
-// 只做业务规则验证，返回验证结果
+// Only does business rule validation, returns validation result
 func (s *OrderDomainService) CanProcessOrder(ctx context.Context, orderID string) (*Order, error) {
     order, err := s.orderRepository.FindByID(ctx, orderID)
     if err != nil {
@@ -580,7 +586,7 @@ func (s *OrderDomainService) CanProcessOrder(ctx context.Context, orderID string
         return nil, err
     }
 
-    // 跨实体业务规则验证
+    // Cross-entity business rule validation
     if !user.IsActive() {
         return nil, ErrUserNotActive
     }
@@ -592,55 +598,55 @@ func (s *OrderDomainService) CanProcessOrder(ctx context.Context, orderID string
 }
 ```
 
-### 应用服务
+### Application Service
 
-编排业务流程，**负责调用Save**：
+Orchestrates business processes, **responsible for calling Save**:
 
 ```go
-// service/order_service.go
+// application/order/service.go
 type OrderApplicationService struct {
     orderRepo          domain.OrderRepository
     orderDomainService *domain.OrderDomainService
 }
 
 func (s *OrderApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
-    // 1. 通过领域服务验证
+    // 1. Validate through domain service
     order, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
     if err != nil {
         return err
     }
 
-    // 2. 修改聚合根状态
+    // 2. Modify aggregate root status
     if err := order.Confirm(); err != nil {
         return err
     }
 
-    // 3. 持久化（仓储只负责持久化，事件由 UoW 保存到 outbox 表）
+    // 3. Persist (repository only handles persistence, events are saved to outbox table by UoW)
     return s.orderRepo.Save(ctx, order)
 }
 ```
 
-### 职责对比
+### Responsibility Comparison
 
-| 特征       | 领域服务             | 应用服务                       |
-|-----------|---------------------|-------------------------------|
-| **职责**   | 跨实体业务规则验证    | 编排业务流程                   |
-| **持久化** | 不调用 Save          | 调用 Save                      |
-| **事件处理** | 不负责             | 通过 UoW 保存事件到 outbox 表   |
-| **调用方** | 应用服务             | 表示层（Controller）           |
+| Feature       | Domain Service             | Application Service                       |
+|--------------|---------------------------|-------------------------------------------|
+| **Responsibility** | Cross-entity business rule validation | Orchestrate business processes |
+| **Persistence** | Does not call Save          | Calls Save                                |
+| **Event Handling** | Not responsible          | Save events to outbox table through UoW   |
+| **Called By** | Application Service        | Presentation Layer (Controller)           |
 
 ---
 
-## 值对象（Value Object）
+## Value Object
 
-值对象是不可变的，通过值而非身份来标识。
+Value objects are immutable and identified by their value rather than identity.
 
-### Money值对象
+### Money Value Object
 
 ```go
 // domain/value_objects.go
 type Money struct {
-    amount   int64   // 以分为单位
+    amount   int64   // in cents
     currency string
 }
 
@@ -651,7 +657,7 @@ func NewMoney(amount int64, currency string) *Money {
 func (m Money) Amount() int64     { return m.amount }
 func (m Money) Currency() string  { return m.currency }
 
-// 值对象不可变，操作返回新实例
+// Value objects are immutable, operations return new instances
 func (m Money) Add(other Money) (*Money, error) {
     if m.currency != other.currency {
         return nil, errors.New("currency mismatch")
@@ -660,7 +666,7 @@ func (m Money) Add(other Money) (*Money, error) {
 }
 ```
 
-### Email值对象
+### Email Value Object
 
 ```go
 type Email struct {
@@ -668,7 +674,7 @@ type Email struct {
 }
 
 func NewEmail(value string) (*Email, error) {
-    // 验证邮箱格式
+    // Validate email format
     if !isValidEmail(value) {
         return nil, errors.New("invalid email format")
     }
@@ -680,69 +686,69 @@ func (e Email) Value() string { return e.value }
 
 ---
 
-## 最佳实践总结
+## Best Practices Summary
 
-### 分层职责
+### Layer Responsibilities
 
-| 层 | 职责 | 依赖 |
-|---|-----|-----|
-| 表示层 | HTTP请求处理、参数验证 | 应用层 |
-| 应用层 | 业务流程编排、调用Save | 领域层 |
-| 领域层 | 业务逻辑、聚合根、领域服务 | 无依赖 |
-| 基础设施层 | 技术实现、仓储、事件发布 | 领域层接口 |
+| Layer | Responsibility | Dependencies |
+|-------|----------------|--------------|
+| Presentation Layer | HTTP request handling, parameter validation | Application Layer |
+| Application Layer | Business process orchestration, calls Save | Domain Layer |
+| Domain Layer | Business logic, aggregate roots, domain services | No dependencies |
+| Infrastructure Layer | Technical implementation, repositories, event publishing | Domain Layer interfaces |
 
-### 事件流转（Outbox Pattern）
+### Event Flow (Outbox Pattern)
 
 ```
-聚合根状态变更 → 记录事件到内存
+Aggregate root state change → Record event to memory
                     ↓
               UoW.Execute()
                     ↓
     ┌───────────────────────────────┐
     │ BEGIN TRANSACTION             │
-    │   repo.Save(聚合根)           │
-    │   outbox.Save(事件)           │
+    │   repo.Save(aggregate root)   │
+    │   outbox.Save(event)          │
     │ COMMIT                        │
     └───────────────────────────────┘
                     ↓
-        后台进程轮询 outbox 表
+        Background process polls outbox table
                     ↓
-        发布到消息队列 → 事件处理器
+        Publish to message queue → Event handler
 ```
 
-**关键点：**
-- 聚合根产生事件，UoW 统一保存
-- 事件与业务数据同事务落库，保证原子性
-- 后台进程异步发布，保证最终一致性
+**Key Points:**
+- Aggregate roots generate events, UoW saves uniformly
+- Events and business data are persisted in the same transaction, ensuring atomicity
+- Background processes publish asynchronously, ensuring eventual consistency
 
-### 代码质量检查
+### Code Quality Check
 
-1. **领域类不依赖框架**
-2. **无法绕过聚合根修改内部实体**
-3. **业务规则在实体内部**
-4. **仓储接口精炼**
+1. **Domain classes don't depend on frameworks**
+2. **Cannot bypass aggregate root to modify internal entities**
+3. **Business rules are inside entities**
+4. **Repository interfaces are concise**
 
 ---
 
-## 进阶主题
+## Advanced Topics
 
-### CQRS模式
+### CQRS Pattern
 
-分离命令（写）和查询（读）模型：
+Separate command (write) and query (read) models:
 
 ```go
-// 命令模型：通过聚合根
+// Command model: through aggregate root
 orderRepo.Save(order)
 
-// 查询模型：专门的查询服务
+// Query model: dedicated query service
 type OrderQueryService interface {
     SearchOrders(criteria OrderSearchCriteria) ([]OrderDTO, error)
 }
 ```
 
-### 事件溯源
+### Event Sourcing
 
-通过事件序列重建聚合状态：
+Reconstruct aggregate state through event sequence:
 
 ```go
 type EventStore interface {
@@ -753,18 +759,18 @@ type EventStore interface {
 
 ---
 
-## 参考资料
+## References
 
-### 推荐书籍
+### Recommended Books
 
-1. **《领域驱动设计》** - Eric Evans（DDD开山之作）
-2. **《实现领域驱动设计》** - Vaughn Vernon（实践指南，强烈推荐）
-3. **《领域驱动设计精粹》** - Vaughn Vernon（快速入门）
+1. **"Domain-Driven Design"** - Eric Evans (Foundational DDD work)
+2. **"Implementing Domain-Driven Design"** - Vaughn Vernon (Practical guide, highly recommended)
+3. **"Domain-Driven Design Distilled"** - Vaughn Vernon (Quick start guide)
 
-### 设计模式
+### Design Patterns
 
-- 聚合模式 - 维护一致性边界
-- 仓储模式 - 持久化抽象
-- 工作单元模式 - 事务管理 + 事件收集
-- 领域事件模式 - 解耦和异步处理
-- **Outbox Pattern** - 事件与数据原子性落库，后台异步发布
+- Aggregate Pattern - Maintains consistency boundaries
+- Repository Pattern - Persistence abstraction
+- Unit of Work Pattern - Transaction management + Event collection
+- Domain Event Pattern - Decoupling and asynchronous processing
+- **Outbox Pattern** - Events and data atomically persisted, background asynchronous publishing

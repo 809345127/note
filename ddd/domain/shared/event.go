@@ -6,49 +6,49 @@ import (
 	"time"
 )
 
-// DomainEvent 领域事件接口
+// DomainEvent Domain Event Interface
 type DomainEvent interface {
 	EventName() string
 	OccurredOn() time.Time
 	GetAggregateID() string
 }
 
-// DomainEventPublisher 领域事件发布器接口
-// DDD原则：领域层定义接口，基础设施层提供实现
-// 应用层通过接口发布事件，不依赖具体实现
+// DomainEventPublisher Domain Event Publisher Interface
+// DDD principle: Domain layer defines interfaces, infrastructure layer provides implementation
+// Application layer publishes events through interfaces, not dependent on specific implementation
 type DomainEventPublisher interface {
-	// Publish 发布领域事件
+	// Publish Publish domain event
 	Publish(event DomainEvent) error
 
-	// Subscribe 订阅特定类型的事件
+	// Subscribe Subscribe to specific types of events
 	Subscribe(eventName string, handler EventHandler) error
 
-	// Unsubscribe 取消订阅
+	// Unsubscribe Unsubscribe
 	Unsubscribe(eventName string, handler EventHandler) error
 }
 
-// EventHandler 事件处理器接口
+// EventHandler Event Handler Interface
 type EventHandler interface {
-	// Handle 处理事件
+	// Handle Process event
 	Handle(event DomainEvent) error
 
-	// Name 返回处理器名称，用于标识
+	// Name Return handler name for identification
 	Name() string
 }
 
-// EventHandlerFunc 函数式事件处理器类型
+// EventHandlerFunc Functional Event Handler Type
 type EventHandlerFunc func(event DomainEvent) error
 
-// EventPublishOptions 事件发布选项
+// EventPublishOptions Event Publish Options
 type EventPublishOptions struct {
-	// Retry 失败时重试次数
+	// Retry Number of retries on failure
 	Retry int
 
-	// Timeout 发布超时时间
+	// Timeout Publishing timeout
 	Timeout time.Duration
 }
 
-// EventSubscription 事件订阅
+// EventSubscription Event Subscription
 type EventSubscription struct {
 	ID        string       `json:"id"`
 	EventName string       `json:"event_name"`
@@ -57,7 +57,7 @@ type EventSubscription struct {
 	IsActive  bool         `json:"is_active"`
 }
 
-// EventPublishResult 事件发布结果
+// EventPublishResult Event Publish Result
 type EventPublishResult struct {
 	EventName   string    `json:"event_name"`
 	Success     bool      `json:"success"`
@@ -65,7 +65,7 @@ type EventPublishResult struct {
 	PublishedAt time.Time `json:"published_at"`
 }
 
-// ValidateEvent 验证领域事件
+// ValidateEvent Validate Domain Event
 func ValidateEvent(event DomainEvent) error {
 	if event == nil {
 		return fmt.Errorf("event cannot be nil")
@@ -88,7 +88,7 @@ func ValidateEvent(event DomainEvent) error {
 	return nil
 }
 
-// EventBus 内存事件总线实现
+// EventBus In-memory Event Bus Implementation
 type EventBus struct {
 	handlers  map[string][]EventHandler
 	mu        sync.RWMutex
@@ -96,7 +96,7 @@ type EventBus struct {
 	muHistory sync.Mutex
 }
 
-// NewEventBus 创建新的事件总线
+// NewEventBus Create New Event Bus
 func NewEventBus() *EventBus {
 	return &EventBus{
 		handlers: make(map[string][]EventHandler),
@@ -104,7 +104,7 @@ func NewEventBus() *EventBus {
 	}
 }
 
-// Publish 发布事件（同步执行）
+// Publish Publish Event (Synchronous Execution)
 func (bus *EventBus) Publish(event DomainEvent) error {
 	if err := ValidateEvent(event); err != nil {
 		return err
@@ -141,7 +141,7 @@ func (bus *EventBus) Publish(event DomainEvent) error {
 	return nil
 }
 
-// Subscribe 订阅事件
+// Subscribe Subscribe to Event
 func (bus *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	if eventName == "" {
 		return fmt.Errorf("event name cannot be empty")
@@ -164,7 +164,7 @@ func (bus *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	return nil
 }
 
-// Unsubscribe 取消订阅
+// Unsubscribe Unsubscribe
 func (bus *EventBus) Unsubscribe(eventName string, handler EventHandler) error {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
@@ -184,7 +184,7 @@ func (bus *EventBus) Unsubscribe(eventName string, handler EventHandler) error {
 	return nil
 }
 
-// GetPublishHistory 获取发布历史（调试用）
+// GetPublishHistory Get publish history (for debugging)
 func (bus *EventBus) GetPublishHistory() []EventPublishResult {
 	bus.muHistory.Lock()
 	defer bus.muHistory.Unlock()
@@ -194,13 +194,13 @@ func (bus *EventBus) GetPublishHistory() []EventPublishResult {
 	return history
 }
 
-// FuncHandler 函数式事件处理器
+// FuncHandler Functional Event Handler
 type FuncHandler struct {
 	name string
 	fn   func(DomainEvent) error
 }
 
-// NewFuncHandler 创建函数式处理器
+// NewFuncHandler Create Functional Handler
 func NewFuncHandler(name string, fn func(DomainEvent) error) *FuncHandler {
 	if name == "" {
 		name = fmt.Sprintf("func-handler-%d", time.Now().UnixNano())
@@ -211,23 +211,23 @@ func NewFuncHandler(name string, fn func(DomainEvent) error) *FuncHandler {
 	}
 }
 
-// Handle 处理事件
+// Handle Process event
 func (h *FuncHandler) Handle(event DomainEvent) error {
 	return h.fn(event)
 }
 
-// Name 返回处理器名称
+// Name Return handler name
 func (h *FuncHandler) Name() string {
 	return h.name
 }
 
-// MockEventPublisher Mock事件发布器
+// MockEventPublisher Mock Event Publisher
 type MockEventPublisher struct {
 	handlers map[string][]EventHandler
 	mu       sync.RWMutex
 }
 
-// NewMockEventPublisher 创建Mock事件发布器
+// NewMockEventPublisher Create Mock Event Publisher
 func NewMockEventPublisher() *MockEventPublisher {
 	return &MockEventPublisher{
 		handlers: make(map[string][]EventHandler),
@@ -284,15 +284,15 @@ func (p *MockEventPublisher) Unsubscribe(eventName string, handler EventHandler)
 	return nil
 }
 
-// LoggingEventHandler 日志事件处理器示例
+// LoggingEventHandler Logging Event Handler Example
 type LoggingEventHandler struct{}
 
-// NewLoggingEventHandler 创建日志事件处理器
+// NewLoggingEventHandler Create Logging Event Handler
 func NewLoggingEventHandler() *LoggingEventHandler {
 	return &LoggingEventHandler{}
 }
 
-// Handle 处理事件（记录日志）
+// Handle Process event (log)
 func (h *LoggingEventHandler) Handle(event DomainEvent) error {
 	fmt.Printf("[EVENT HANDLED] %s: aggregate=%s time=%s\n",
 		event.EventName(),
@@ -301,17 +301,17 @@ func (h *LoggingEventHandler) Handle(event DomainEvent) error {
 	return nil
 }
 
-// Name 返回处理器名称
+// Name Return handler name
 func (h *LoggingEventHandler) Name() string {
 	return "logging-event-handler"
 }
 
-// EventPublishAdapter 适配器模式：将DomainEventPublisher转为具体事件发布器
+// EventPublishAdapter Adapter Pattern: Convert DomainEventPublisher to specific event publisher
 type EventPublishAdapter struct {
 	publisher DomainEventPublisher
 }
 
-// NewEventPublishAdapter 创建适配器
+// NewEventPublishAdapter Create Adapter
 func NewEventPublishAdapter(publisher DomainEventPublisher) *EventPublishAdapter {
 	return &EventPublishAdapter{
 		publisher: publisher,

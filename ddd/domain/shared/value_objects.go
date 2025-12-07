@@ -2,13 +2,13 @@ package shared
 
 import "errors"
 
-// Money 值对象 - 表示金额
+// Money Value Object - Represents monetary amount
 type Money struct {
-	amount   int64  // 以最小货币单位存储（如分）
-	currency string // 货币代码（如CNY, USD）
+	amount   int64  // Stored in smallest currency unit (e.g., cents)
+	currency string // Currency code (e.g., CNY, USD)
 }
 
-// NewMoney 创建新的Money值对象
+// NewMoney Create New Money Value Object
 func NewMoney(amount int64, currency string) *Money {
 	return &Money{
 		amount:   amount,
@@ -16,17 +16,17 @@ func NewMoney(amount int64, currency string) *Money {
 	}
 }
 
-// Amount 获取金额数量
+// Amount Get monetary amount
 func (m Money) Amount() int64 {
 	return m.amount
 }
 
-// Currency 获取货币类型
+// Currency Get currency type
 func (m Money) Currency() string {
 	return m.currency
 }
 
-// Add 金额相加，返回新的Money值对象
+// Add Add amounts, return new Money value object
 func (m Money) Add(other Money) (*Money, error) {
 	if m.currency != other.currency {
 		return nil, errors.New("cannot add money with different currencies")
@@ -38,7 +38,7 @@ func (m Money) Add(other Money) (*Money, error) {
 	}, nil
 }
 
-// Subtract 金额相减，返回新的Money值对象
+// Subtract Subtract amounts, return new Money value object
 func (m Money) Subtract(other Money) (*Money, error) {
 	if m.currency != other.currency {
 		return nil, errors.New("cannot subtract money with different currencies")
@@ -50,17 +50,17 @@ func (m Money) Subtract(other Money) (*Money, error) {
 	}, nil
 }
 
-// IsGreaterThan 比较金额是否大于另一个金额
+// IsGreaterThan Compare if amount is greater than another amount
 func (m Money) IsGreaterThan(other Money) bool {
 	return m.amount > other.amount
 }
 
-// IsGreaterThanOrEqual 比较金额是否大于或等于另一个金额
+// IsGreaterThanOrEqual Compare if amount is greater than or equal to another amount
 func (m Money) IsGreaterThanOrEqual(other Money) bool {
 	return m.amount >= other.amount
 }
 
-// Equals 比较两个Money值对象是否相等
+// Equals Compare if two Money value objects are equal
 func (m Money) Equals(other Money) bool {
 	return m.amount == other.amount && m.currency == other.currency
 }

@@ -20,7 +20,7 @@ echo ""
 echo "3. Testing Create New User..."
 CREATE_USER_RESPONSE=$(curl -s -X POST "$BASE_URL/users" \
   -H "Content-Type: application/json" \
-  -d '{"name":"测试用户","email":"test@example.com","age":25}')
+  -d '{"name":"Test User","email":"test@example.com","age":25}')
 echo "$CREATE_USER_RESPONSE" | jq .
 NEW_USER_ID=$(echo "$CREATE_USER_RESPONSE" | jq -r '.data.id')
 echo "Created user ID: $NEW_USER_ID"
@@ -54,7 +54,7 @@ CREATE_ORDER_RESPONSE=$(curl -s -X POST "$BASE_URL/orders" \
     "items": [
       {
         "product_id": "prod-test",
-        "product_name": "测试商品",
+        "product_name": "Test Product",
         "quantity": 2,
         "unit_price": 99900,
         "currency": "CNY"

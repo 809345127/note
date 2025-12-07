@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l:*)",
+      "Bash(grep -r [u4e00-u9fff] --include=*.go /Users/shize/note/ddd)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(python3 -c:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

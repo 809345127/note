@@ -1,4 +1,4 @@
-package api
+package middleware
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"ddd-example/api/response"
 	"ddd-example/config"
 	"ddd-example/pkg/logger"
 
@@ -16,13 +17,11 @@ import (
 )
 
 const (
-	// RequestIDHeader 请求ID头
+	// RequestIDHeader Request ID header
 	RequestIDHeader = "X-Request-ID"
-	// RequestIDKey 请求ID上下文键
-	RequestIDKey = "request_id"
 )
 
-// RequestIDMiddleware 请求ID中间件
+// RequestIDMiddleware Request ID middleware
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader(RequestIDHeader)
@@ -30,33 +29,33 @@ func RequestIDMiddleware() gin.HandlerFunc {
 			requestID = uuid.New().String()
 		}
 
-		c.Set(RequestIDKey, requestID)
+		c.Set(response.RequestIDKey, requestID)
 		c.Header(RequestIDHeader, requestID)
 
 		c.Next()
 	}
 }
 
-// LoggingMiddleware 日志中间件
+// LoggingMiddleware Logging middleware
 func LoggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
 		raw := c.Request.URL.RawQuery
 
-		// 获取请求ID
-		requestID, _ := c.Get(RequestIDKey)
+		// Get request ID
+		requestID, _ := c.Get(response.RequestIDKey)
 		reqID, _ := requestID.(string)
 
-		// 创建带请求ID的日志
+		// Create logger with request ID
 		log := logger.WithRequestID(reqID)
 
 		c.Next()
 
-		// 计算延迟
+		// Calculate latency
 		latency := time.Since(start)
 
-		// 记录日志
+		// Log the request
 		event := log.Info()
 		if c.Writer.Status() >= 400 {
 			event = log.Warn()
@@ -80,23 +79,23 @@ func LoggingMiddleware() gin.HandlerFunc {
 	}
 }
 
-// RecoveryMiddleware 恢复中间件（修复bug版本）
+// RecoveryMiddleware Recovery middleware (bug-fixed version)
 func RecoveryMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				requestID, _ := c.Get(RequestIDKey)
+				requestID, _ := c.Get(response.RequestIDKey)
 				reqID, _ := requestID.(string)
 
-				// 记录panic日志
+				// Log panic
 				logger.Error().
 					Str("request_id", reqID).
 					Interface("error", recovered).
 					Str("path", c.Request.URL.Path).
 					Msg("Panic recovered")
 
-				// 返回500错误（只调用一次响应方法）
-				c.AbortWithStatusJSON(http.StatusInternalServerError, Response{
+				// Return 500 error (call response method only once)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, response.Response{
 					Success:   false,
 					Error:     "internal server error",
 					Message:   "An unexpected error occurred",
@@ -110,12 +109,12 @@ func RecoveryMiddleware() gin.HandlerFunc {
 	}
 }
 
-// CORSMiddleware CORS中间件（可配置版本）
+// CORSMiddleware CORS middleware (configurable version)
 func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 
-		// 检查是否允许的来源
+		// Check if origin is allowed
 		allowed := false
 		for _, o := range cfg.AllowOrigins {
 			if o == "*" || o == origin {
@@ -132,7 +131,7 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Credentials", "true")
 		}
 
-		// 构建允许的方法和头
+		// Build allowed methods and headers
 		methods := ""
 		for i, m := range cfg.AllowMethods {
 			if i > 0 {
@@ -162,14 +161,14 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 	}
 }
 
-// RateLimiter 限流器
+// RateLimiter Rate limiter
 type RateLimiter struct {
 	limiters sync.Map
 	rate     rate.Limit
 	burst    int
 }
 
-// NewRateLimiter 创建限流器
+// NewRateLimiter Create rate limiter
 func NewRateLimiter(r float64, burst int) *RateLimiter {
 	return &RateLimiter{
 		rate:  rate.Limit(r),
@@ -177,7 +176,7 @@ func NewRateLimiter(r float64, burst int) *RateLimiter {
 	}
 }
 
-// getLimiter 获取或创建IP的限流器
+// getLimiter Get or create rate limiter for IP
 func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	if limiter, ok := rl.limiters.Load(ip); ok {
 		return limiter.(*rate.Limiter)
@@ -188,7 +187,7 @@ func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	return limiter
 }
 
-// RateLimitMiddleware 限流中间件
+// RateLimitMiddleware Rate limiting middleware
 func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 	if !cfg.Enabled {
 		return func(c *gin.Context) {
@@ -203,7 +202,7 @@ func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 		l := limiter.getLimiter(ip)
 
 		if !l.Allow() {
-			requestID, _ := c.Get(RequestIDKey)
+			requestID, _ := c.Get(response.RequestIDKey)
 			reqID, _ := requestID.(string)
 
 			logger.Warn().
@@ -211,7 +210,7 @@ func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 				Str("client_ip", ip).
 				Msg("Rate limit exceeded")
 
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, Response{
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, response.Response{
 				Success:   false,
 				Error:     "rate_limit_exceeded",
 				Message:   "Too many requests, please try again later",
@@ -225,7 +224,7 @@ func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 	}
 }
 
-// TimeoutMiddleware 超时中间件
+// TimeoutMiddleware Timeout middleware
 func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
@@ -233,7 +232,7 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 
 		c.Request = c.Request.WithContext(ctx)
 
-		// 使用channel监控超时
+		// Use channel to monitor timeout
 		done := make(chan struct{})
 		go func() {
 			c.Next()
@@ -244,7 +243,7 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 		case <-done:
 			return
 		case <-ctx.Done():
-			requestID, _ := c.Get(RequestIDKey)
+			requestID, _ := c.Get(response.RequestIDKey)
 			reqID, _ := requestID.(string)
 
 			logger.Warn().
@@ -252,7 +251,7 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 				Str("path", c.Request.URL.Path).
 				Msg("Request timeout")
 
-			c.AbortWithStatusJSON(http.StatusGatewayTimeout, Response{
+			c.AbortWithStatusJSON(http.StatusGatewayTimeout, response.Response{
 				Success:   false,
 				Error:     "request_timeout",
 				Message:   "Request timeout",
@@ -263,7 +262,7 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	}
 }
 
-// GinLogger 返回用于Gin的zerolog适配器
+// GinLogger Return zerolog adapter for Gin
 func GinLogger(log *zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()

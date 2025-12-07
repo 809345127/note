@@ -6,11 +6,11 @@ import (
 	"net/http"
 )
 
-// ErrorCode 错误码
+// ErrorCode Error Code
 type ErrorCode string
 
 const (
-	// 通用错误码
+	// Common error codes
 	CodeInternal       ErrorCode = "INTERNAL_ERROR"
 	CodeBadRequest     ErrorCode = "BAD_REQUEST"
 	CodeUnauthorized   ErrorCode = "UNAUTHORIZED"
@@ -20,7 +20,7 @@ const (
 	CodeTooManyRequest ErrorCode = "TOO_MANY_REQUESTS"
 	CodeValidation     ErrorCode = "VALIDATION_ERROR"
 
-	// 业务错误码
+	// Business error codes
 	CodeUserNotFound     ErrorCode = "USER_NOT_FOUND"
 	CodeUserNotActive    ErrorCode = "USER_NOT_ACTIVE"
 	CodeEmailExists      ErrorCode = "EMAIL_EXISTS"
@@ -28,7 +28,7 @@ const (
 	CodeInvalidOrderState ErrorCode = "INVALID_ORDER_STATE"
 )
 
-// AppError 应用错误
+// AppError Application Error
 type AppError struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
@@ -46,7 +46,7 @@ func (e *AppError) Unwrap() error {
 	return e.Err
 }
 
-// HTTPStatusCode 返回对应的HTTP状态码
+// HTTPStatusCode Return corresponding HTTP status code
 func (e *AppError) HTTPStatusCode() int {
 	switch e.Code {
 	case CodeBadRequest, CodeValidation:
@@ -68,7 +68,7 @@ func (e *AppError) HTTPStatusCode() int {
 	}
 }
 
-// New 创建新错误
+// New Create new error
 func New(code ErrorCode, message string) *AppError {
 	return &AppError{
 		Code:    code,
@@ -76,7 +76,7 @@ func New(code ErrorCode, message string) *AppError {
 	}
 }
 
-// Wrap 包装错误
+// Wrap Wrap error
 func Wrap(err error, code ErrorCode, message string) *AppError {
 	return &AppError{
 		Code:    code,
@@ -85,7 +85,7 @@ func Wrap(err error, code ErrorCode, message string) *AppError {
 	}
 }
 
-// 常用错误构造函数
+// Common error constructor functions
 
 func BadRequest(message string) *AppError {
 	return New(CodeBadRequest, message)
@@ -119,7 +119,7 @@ func Validation(message string) *AppError {
 	return New(CodeValidation, message)
 }
 
-// 业务错误
+// Business errors (translated)
 
 func UserNotFound() *AppError {
 	return New(CodeUserNotFound, "user not found")
@@ -141,7 +141,7 @@ func InvalidOrderState(message string) *AppError {
 	return New(CodeInvalidOrderState, message)
 }
 
-// Is 检查是否为特定错误码
+// Is Check if it's a specific error code
 func Is(err error, code ErrorCode) bool {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
@@ -150,29 +150,29 @@ func Is(err error, code ErrorCode) bool {
 	return false
 }
 
-// AsAppError 将错误转换为 AppError
+// AsAppError Convert error to AppError
 func AsAppError(err error) *AppError {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
 		return appErr
 	}
-	// 如果不是 AppError，包装为内部错误
+	// If not AppError, wrap as internal error
 	return Wrap(err, CodeInternal, "internal server error")
 }
 
-// MapDomainError 将领域错误映射为应用错误
+// MapDomainError Map domain error to application error
 func MapDomainError(err error) *AppError {
 	if err == nil {
 		return nil
 	}
 
-	// 已经是 AppError
+	// Already AppError
 	var appErr *AppError
 	if errors.As(err, &appErr) {
 		return appErr
 	}
 
-	// 根据错误信息映射
+	// Map based on error message
 	msg := err.Error()
 	switch msg {
 	case "user not found":
@@ -186,7 +186,7 @@ func MapDomainError(err error) *AppError {
 	case "user cannot place order":
 		return UserNotActive()
 	default:
-		// 检查是否包含特定关键词
+		// Check if contains specific keywords
 		if contains(msg, "not found") {
 			return NotFound(msg)
 		}

@@ -14,21 +14,21 @@ import (
 
 var log zerolog.Logger
 
-// Init 初始化日志
+// Init Initialize logger
 func Init(cfg *config.LogConfig) error {
-	// 设置错误堆栈
+	// Set error stack
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	zerolog.TimeFieldFormat = time.RFC3339
 
-	// 设置日志级别
+	// Set log level
 	level := parseLevel(cfg.Level)
 	zerolog.SetGlobalLevel(level)
 
-	// 设置输出
+	// Set output
 	var output io.Writer
 	switch cfg.Output {
 	case "file":
-		// 确保日志目录存在
+		// Ensure log directory exists
 		dir := filepath.Dir(cfg.FilePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
@@ -42,7 +42,7 @@ func Init(cfg *config.LogConfig) error {
 		output = os.Stdout
 	}
 
-	// 设置格式
+	// Set format
 	if cfg.Format == "console" {
 		output = zerolog.ConsoleWriter{
 			Out:        output,
@@ -56,7 +56,7 @@ func Init(cfg *config.LogConfig) error {
 	return nil
 }
 
-// parseLevel 解析日志级别
+// parseLevel Parse log level
 func parseLevel(level string) zerolog.Level {
 	switch level {
 	case "debug":
@@ -72,42 +72,42 @@ func parseLevel(level string) zerolog.Level {
 	}
 }
 
-// Get 获取日志实例
+// Get Get logger instance
 func Get() *zerolog.Logger {
 	return &log
 }
 
-// Debug 调试日志
+// Debug Debug log
 func Debug() *zerolog.Event {
 	return log.Debug()
 }
 
-// Info 信息日志
+// Info Info log
 func Info() *zerolog.Event {
 	return log.Info()
 }
 
-// Warn 警告日志
+// Warn Warn log
 func Warn() *zerolog.Event {
 	return log.Warn()
 }
 
-// Error 错误日志
+// Error Error log
 func Error() *zerolog.Event {
 	return log.Error()
 }
 
-// Fatal 致命错误日志
+// Fatal Fatal error log
 func Fatal() *zerolog.Event {
 	return log.Fatal()
 }
 
-// WithRequestID 添加请求ID
+// WithRequestID Add request ID
 func WithRequestID(requestID string) zerolog.Logger {
 	return log.With().Str("request_id", requestID).Logger()
 }
 
-// WithField 添加字段
+// WithField Add field
 func WithField(key string, value interface{}) zerolog.Logger {
 	return log.With().Interface(key, value).Logger()
 }

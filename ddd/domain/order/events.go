@@ -6,7 +6,7 @@ import (
 	"ddd-example/domain/shared"
 )
 
-// OrderPlacedEvent 订单创建事件
+// OrderPlacedEvent Order placed event
 type OrderPlacedEvent struct {
 	orderID     string
 	userID      string

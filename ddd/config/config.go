@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config 应用配置
+// Config Application Configuration
 type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	Server   ServerConfig   `mapstructure:"server"`
@@ -17,30 +17,30 @@ type Config struct {
 	CORS     CORSConfig     `mapstructure:"cors"`
 }
 
-// AppConfig 应用配置
+// AppConfig Application Configuration
 type AppConfig struct {
 	Name    string `mapstructure:"name"`
 	Version string `mapstructure:"version"`
 	Env     string `mapstructure:"env"` // development, staging, production
 }
 
-// ServerConfig 服务器配置
+// ServerConfig Server Configuration
 type ServerConfig struct {
-	Port            string        `mapstructure:"port"`
-	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
-	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+	Port            string          `mapstructure:"port"`
+	ReadTimeout     time.Duration   `mapstructure:"read_timeout"`
+	WriteTimeout    time.Duration   `mapstructure:"write_timeout"`
+	ShutdownTimeout time.Duration   `mapstructure:"shutdown_timeout"`
 	RateLimit       RateLimitConfig `mapstructure:"rate_limit"`
 }
 
-// RateLimitConfig 限流配置
+// RateLimitConfig Rate Limiting Configuration
 type RateLimitConfig struct {
 	Enabled  bool    `mapstructure:"enabled"`
-	Rate     float64 `mapstructure:"rate"`      // 每秒请求数
-	Burst    int     `mapstructure:"burst"`     // 突发容量
+	Rate     float64 `mapstructure:"rate"`      // Requests per second
+	Burst    int     `mapstructure:"burst"`     // Burst capacity
 }
 
-// DatabaseConfig 数据库配置
+// DatabaseConfig Database Configuration
 type DatabaseConfig struct {
 	Type            string        `mapstructure:"type"` // mysql, mock
 	Host            string        `mapstructure:"host"`
@@ -53,7 +53,7 @@ type DatabaseConfig struct {
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
 
-// LogConfig 日志配置
+// LogConfig Log Configuration
 type LogConfig struct {
 	Level      string `mapstructure:"level"`       // debug, info, warn, error
 	Format     string `mapstructure:"format"`      // json, console
@@ -61,7 +61,7 @@ type LogConfig struct {
 	FilePath   string `mapstructure:"file_path"`
 }
 
-// CORSConfig CORS配置
+// CORSConfig CORS Configuration
 type CORSConfig struct {
 	AllowOrigins     []string `mapstructure:"allow_origins"`
 	AllowMethods     []string `mapstructure:"allow_methods"`
@@ -70,24 +70,24 @@ type CORSConfig struct {
 	MaxAge           int      `mapstructure:"max_age"`
 }
 
-// IsDevelopment 是否为开发环境
+// IsDevelopment Whether it's development environment
 func (c *Config) IsDevelopment() bool {
 	return c.App.Env == "development"
 }
 
-// IsProduction 是否为生产环境
+// IsProduction Whether it's production environment
 func (c *Config) IsProduction() bool {
 	return c.App.Env == "production"
 }
 
-// Load 加载配置
+// Load Load Configuration
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
 
-	// 设置默认值
+	// Set default values
 	setDefaults(v)
 
-	// 配置文件设置
+	// Configuration file settings
 	if configPath != "" {
 		v.SetConfigFile(configPath)
 	} else {
@@ -97,17 +97,17 @@ func Load(configPath string) (*Config, error) {
 		v.AddConfigPath("./config")
 	}
 
-	// 读取环境变量
+	// Read environment variables
 	v.SetEnvPrefix("DDD")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// 读取配置文件
+	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
-		// 配置文件不存在时使用默认值
+		// Use default values when config file doesn't exist
 	}
 
 	var config Config
@@ -118,7 +118,7 @@ func Load(configPath string) (*Config, error) {
 	return &config, nil
 }
 
-// setDefaults 设置默认配置
+// setDefaults Set default configuration
 func setDefaults(v *viper.Viper) {
 	// App
 	v.SetDefault("app.name", "ddd-example")

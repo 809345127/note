@@ -2,9 +2,9 @@ package user
 
 import "errors"
 
-// 领域错误定义
-// DDD原则：领域层定义业务相关的错误类型
-// 这些错误表达业务规则的违反，而非技术错误
+// Domain error definitions
+// DDD principle: Domain layer defines business-related error types
+// These errors express violations of business rules, not technical errors
 
 var (
 	ErrInvalidEmail      = errors.New("invalid email format")

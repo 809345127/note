@@ -1,18 +1,18 @@
 /*
-Package order 订单子域 - DDD架构的核心层
+Package order Order subdomain - Core layer of DDD architecture
 
-领域层是整个应用的核心，包含：
-- 聚合根（Aggregate Root）：维护一致性边界的实体
-- 实体（Entity）：具有唯一标识的对象
-- 值对象（Value Object）：通过属性值标识的不可变对象
-- 领域服务（Domain Service）：跨实体的业务逻辑
-- 领域事件（Domain Event）：记录业务系统中发生的重要事件
-- 仓储接口（Repository Interface）：聚合根持久化的抽象
+The domain layer is the core of the entire application, containing:
+- Aggregate Roots: Entities that maintain consistency boundaries
+- Entity: Objects with unique identity
+- Value Objects: Immutable objects identified by their attributes
+- Domain Services: Business logic spanning multiple entities
+- Domain Events: Important events recorded in the business system
+- Repository Interfaces: Abstraction for aggregate root persistence
 
-DDD核心原则：
-1. 领域层不依赖任何其他层（纯净的业务逻辑）
-2. 所有字段私有，通过方法暴露行为
-3. 业务规则封装在实体和值对象内部
+DDD Core Principles:
+1. Domain layer does not depend on any other layer (pure business logic)
+2. All fields are private, behavior exposed through methods
+3. Business rules encapsulated within entities and value objects
 */
 package order
 
@@ -25,27 +25,27 @@ import (
 	"github.com/google/uuid"
 )
 
-// Order 订单聚合根
-// Order作为聚合根，维护订单的一致性边界
-// 所有对Order和OrderItem的修改都必须通过Order聚合根进行
+// Order Order aggregate root
+// Order acts as the aggregate root, maintaining the consistency boundary of orders
+// All modifications to Order and OrderItem must go through the Order aggregate root
 type Order struct {
 	id          string
 	userID      string
 	items       []OrderItem
 	totalAmount shared.Money
 	status      Status
-	version     int // 乐观锁版本号，用于并发控制
+	version     int // Optimistic lock version number for concurrency control
 	createdAt   time.Time
 	updatedAt   time.Time
 
-	// 领域事件列表，用于记录聚合内发生的领域事件
+	// Domain event list for recording events within the aggregate
 	events []shared.DomainEvent
 }
 
-// OrderItem 订单项 - 聚合内的实体（非聚合根）
-// OrderItem是聚合的一部分，没有全局唯一标识，只能通过Order访问
+// OrderItem Order item - Entity within the aggregate (non-aggregate root)
+// OrderItem is part of the aggregate, has no global unique identifier, can only be accessed through Order
 type OrderItem struct {
-	id          string // OrderItem在聚合内的唯一标识
+	id          string // Unique identifier for OrderItem within the aggregate
 	productID   string
 	productName string
 	quantity    int
@@ -53,24 +53,24 @@ type OrderItem struct {
 	subtotal    shared.Money
 }
 
-// Status 订单状态枚举
+// Status Order status enum
 type Status string
 
 const (
-	StatusPending   Status = "PENDING"   // 待处理
-	StatusConfirmed Status = "CONFIRMED" // 已确认
-	StatusShipped   Status = "SHIPPED"   // 已发货
-	StatusDelivered Status = "DELIVERED" // 已送达
-	StatusCancelled Status = "CANCELLED" // 已取消
+	StatusPending   Status = "PENDING"   // Pending
+	StatusConfirmed Status = "CONFIRMED" // Confirmed
+	StatusShipped   Status = "SHIPPED"   // Shipped
+	StatusDelivered Status = "DELIVERED" // Delivered
+	StatusCancelled Status = "CANCELLED" // Cancelled
 )
 
-// PostOptions 创建订单的选项
+// PostOptions Create order options
 type PostOptions struct {
 	UserID string
 	Items  []ItemRequest
 }
 
-// ItemRequest 创建订单项的请求
+// ItemRequest Create order item request
 type ItemRequest struct {
 	ProductID   string
 	ProductName string
@@ -79,17 +79,17 @@ type ItemRequest struct {
 }
 
 // ============================================================================
-// 工厂方法 - 创建聚合根
+// Factory Methods - Creating Aggregate Roots
 // ============================================================================
 //
-// DDD原则：使用工厂方法创建聚合根，而非直接使用struct字面量
-// 优点：
-// 1. 封装创建逻辑和验证规则
-// 2. 确保聚合根创建时处于有效状态
-// 3. 可以在创建时记录领域事件
+// DDD Principle: Use factory methods to create aggregate roots, not direct struct literals
+// Advantages:
+// 1. Encapsulates creation logic and validation rules
+// 2. Ensures aggregate root is in valid state when created
+// 3. Can record domain events during creation
 
-// NewOrder 创建新的Order聚合根
-// 这是创建Order的唯一入口，确保订单创建时满足所有业务规则
+// NewOrder Create new Order aggregate root
+// This is the only entry point for creating Order, ensuring all business rules are met during order creation
 func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 	if userID == "" {
 		return nil, errors.New("userID cannot be empty")
@@ -99,7 +99,7 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		return nil, errors.New("order must have at least one item")
 	}
 
-	// 创建订单项
+	// Create order items
 	items := make([]OrderItem, len(requests))
 	for i, req := range requests {
 		if req.Quantity <= 0 {
@@ -116,7 +116,7 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		}
 	}
 
-	// 计算总金额
+	// Calculate total amount
 	totalAmount := shared.NewMoney(0, "CNY")
 	var err error
 	for _, item := range items {
@@ -139,24 +139,24 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		events:      make([]shared.DomainEvent, 0),
 	}
 
-	// 记录领域事件
+	// Record domain event
 	order.events = append(order.events, NewOrderPlacedEvent(order.id, userID, order.totalAmount))
 
 	return order, nil
 }
 
 // ============================================================================
-// 重建DTO - 仅供仓储层使用
+// ReconstructionDTO - For Repository Layer Use Only
 // ============================================================================
 //
-// DDD原则：聚合根从数据库重建时需要特殊处理
-// 由于字段是私有的，仓储层需要一种方式来重建聚合根
-// 使用DTO + 工厂方法模式，而非暴露setter或使用反射
+// DDD Principle: Aggregate root reconstruction from database requires special handling
+// Since fields are private, the repository layer needs a way to reconstruct aggregate roots
+// Using DTO + Factory method pattern, rather than exposing setters or using reflection
 
-// ReconstructionDTO 订单重建数据传输对象
-// 仅限于仓储层使用，用于从数据库重建Order聚合根
-// 这是一个特殊的设计，保持了领域模型的封装性
-// ⚠️ 注意：此DTO仅应在仓储实现中使用，不应在应用层调用
+// ReconstructionDTO Order reconstruction data transfer object
+// Limited to repository layer usage, for reconstructing Order aggregate root from database
+// This is a special design that maintains encapsulation of the domain model
+// ⚠️ Note: This DTO should only be used in repository implementation, not called from application layer
 type ReconstructionDTO struct {
 	ID          string
 	UserID      string
@@ -168,9 +168,9 @@ type ReconstructionDTO struct {
 	UpdatedAt   time.Time
 }
 
-// RebuildFromDTO 从DTO重建Order聚合根
-// 这是一个工厂方法，专门用于仓储层重建聚合根
-// ⚠️ 注意：此方法仅应在仓储实现中使用，不应在应用层调用
+// RebuildFromDTO Reconstruct Order aggregate root from DTO
+// This is a factory method specifically for repository layer to reconstruct aggregate root
+// ⚠️ Note: This method should only be used in repository implementation, not called from application layer
 func RebuildFromDTO(dto ReconstructionDTO) *Order {
 	return &Order{
 		id:          dto.ID,
@@ -185,7 +185,7 @@ func RebuildFromDTO(dto ReconstructionDTO) *Order {
 	}
 }
 
-// ItemReconstructionDTO 订单项重建数据传输对象
+// ItemReconstructionDTO Order item reconstruction data transfer object
 type ItemReconstructionDTO struct {
 	ID          string
 	ProductID   string
@@ -195,7 +195,7 @@ type ItemReconstructionDTO struct {
 	Subtotal    shared.Money
 }
 
-// RebuildItemFromDTO 从DTO重建OrderItem
+// RebuildItemFromDTO Rebuild OrderItem from DTO
 func RebuildItemFromDTO(dto ItemReconstructionDTO) OrderItem {
 	return OrderItem{
 		id:          dto.ID,
@@ -208,17 +208,17 @@ func RebuildItemFromDTO(dto ItemReconstructionDTO) OrderItem {
 }
 
 // ============================================================================
-// 聚合根行为方法 - 管理聚合内实体
+// Aggregate Root Behavior Methods - Managing Entities Within Aggregate
 // ============================================================================
 //
-// DDD原则：聚合内的实体（OrderItem）只能通过聚合根（Order）操作
-// 外部代码无法直接创建或修改OrderItem
+// DDD Principle: Entities within an aggregate (OrderItem) can only be accessed through the aggregate root (Order)
+// External code cannot directly create or modify OrderItem
 
-// AddItem 通过聚合根添加订单项
-// 这是DDD的重要原则：聚合内的实体只能通过聚合根访问和修改
-// 参数productID, productName string, quantity int, unitPrice shared.Money
+// AddItem Add order item through aggregate root
+// This is an important DDD principle: aggregate internal entities can only be accessed and modified through the aggregate root
+// Parameters: productID, productName string, quantity int, unitPrice shared.Money
 func (o *Order) AddItem(productID, productName string, quantity int, unitPrice shared.Money) error {
-	// 验证当前状态是否允许修改
+	// Verify if current status allows modification
 	if o.status != StatusPending {
 		return errors.New("can only add items to pending orders")
 	}
@@ -227,7 +227,7 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 		return errors.New("quantity must be positive")
 	}
 
-	// 创建新的订单项
+	// Create new order item
 	item := OrderItem{
 		id:          uuid.New().String(),
 		productID:   productID,
@@ -239,13 +239,13 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 
 	o.items = append(o.items, item)
 
-	// 重新计算总金额
+	// Recalculate total amount
 	newTotal := shared.NewMoney(0, "CNY")
 	var err error
 	for _, it := range o.items {
 		newTotal, err = newTotal.Add(it.subtotal)
 		if err != nil {
-			// 回滚添加操作
+			// Rollback add operation
 			o.items = o.items[:len(o.items)-1]
 			return err
 		}
@@ -256,17 +256,17 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 	return nil
 }
 
-// RemoveItem 通过聚合根删除订单项
+// RemoveItem Remove order item through aggregate root
 func (o *Order) RemoveItem(itemID string) error {
 	if o.status != StatusPending {
 		return errors.New("can only remove items from pending orders")
 	}
 
-	// 查找并删除订单项
+	// Find and delete order item
 	found := false
 	for i, item := range o.items {
 		if item.id == itemID {
-			// 从切片中删除元素
+			// Remove element from slice
 			o.items = append(o.items[:i], o.items[i+1:]...)
 			found = true
 			break
@@ -277,7 +277,7 @@ func (o *Order) RemoveItem(itemID string) error {
 		return errors.New("item not found")
 	}
 
-	// 重新计算总金额
+	// Recalculate total amount
 	newTotal := shared.NewMoney(0, "CNY")
 	for _, item := range o.items {
 		newTotal, _ = newTotal.Add(item.subtotal)
@@ -289,18 +289,18 @@ func (o *Order) RemoveItem(itemID string) error {
 }
 
 // ============================================================================
-// 状态变更方法 - 领域行为
+// State Change Methods - Domain Behavior
 // ============================================================================
 //
-// DDD原则：状态变更必须通过聚合根的方法进行，而非直接修改字段
-// 这样可以：
-// 1. 封装业务规则（如状态转换限制）
-// 2. 自动维护版本号（乐观锁）
-// 3. 记录领域事件
-// 4. 保证聚合内部一致性
+// DDD Principle: State changes must go through aggregate root methods, not direct field modification
+// Benefits:
+// 1. Encapsulates business rules (e.g., state transition restrictions)
+// 2. Automatically maintains version numbers (optimistic locking)
+// 3. Records domain events
+// 4. Ensures aggregate internal consistency
 
-// Confirm 确认订单（状态从PENDING -> CONFIRMED）
-// 业务规则：只有待处理的订单才能被确认
+// Confirm Confirm order (status from PENDING -> CONFIRMED)
+// Business rule: Only pending orders can be confirmed
 func (o *Order) Confirm() error {
 	if o.status != StatusPending {
 		return errors.New("only pending orders can be confirmed")
@@ -313,8 +313,8 @@ func (o *Order) Confirm() error {
 	return nil
 }
 
-// Cancel 取消订单
-// 业务规则：已送达或已取消的订单不能再取消
+// Cancel Cancel order
+// Business rule: Delivered or cancelled orders cannot be cancelled again
 func (o *Order) Cancel() error {
 	if o.status == StatusDelivered || o.status == StatusCancelled {
 		return errors.New("cannot cancel delivered or cancelled orders")
@@ -327,8 +327,8 @@ func (o *Order) Cancel() error {
 	return nil
 }
 
-// Ship 发货（状态从CONFIRMED -> SHIPPED）
-// 业务规则：只有已确认的订单才能发货
+// Ship Ship order (status from CONFIRMED -> SHIPPED)
+// Business rule: Only confirmed orders can be shipped
 func (o *Order) Ship() error {
 	if o.status != StatusConfirmed {
 		return errors.New("only confirmed orders can be shipped")
@@ -341,8 +341,8 @@ func (o *Order) Ship() error {
 	return nil
 }
 
-// Deliver 送达（状态从SHIPPED -> DELIVERED）
-// 业务规则：只有已发货的订单才能标记为送达
+// Deliver Deliver order (status from SHIPPED -> DELIVERED)
+// Business rule: Only shipped orders can be marked as delivered
 func (o *Order) Deliver() error {
 	if o.status != StatusShipped {
 		return errors.New("only shipped orders can be delivered")
@@ -356,17 +356,17 @@ func (o *Order) Deliver() error {
 }
 
 // ============================================================================
-// Getters - 只读访问器
+// Getters - Read-only Accessors
 // ============================================================================
 //
-// DDD原则：字段私有，通过getter暴露只读访问
-// 这样外部只能读取状态，不能直接修改，保证了封装性
+// DDD Principle: Fields are private, exposed through getters for read-only access
+// This ensures external code can only read state, not modify directly, maintaining encapsulation
 
 func (o *Order) ID() string     { return o.id }
 func (o *Order) UserID() string { return o.userID }
 
-// Items 返回订单项的副本
-// DDD原则：聚合内部实体不能被外部直接修改，返回副本保证封装性
+// Items Return copy of order items
+// DDD Principle: Aggregate internal entities cannot be modified directly by external code, returning copy ensures encapsulation
 func (o *Order) Items() []OrderItem {
 	items := make([]OrderItem, len(o.items))
 	copy(items, o.items)
@@ -379,17 +379,17 @@ func (o *Order) CreatedAt() time.Time      { return o.createdAt }
 func (o *Order) UpdatedAt() time.Time      { return o.updatedAt }
 
 // ============================================================================
-// 领域事件管理
+// Domain Event Management
 // ============================================================================
 //
-// DDD原则：聚合根负责记录领域事件，UoW 负责保存到 outbox 表
-// 事件流程：聚合状态变更 → 记录事件 → UoW 收集 → 保存到 outbox → Message Relay 异步发布
+// DDD Principle: Aggregate root records domain events, UoW saves to outbox table
+// Event flow: Aggregate state change → Record event → UoW collects → Save to outbox → Message Relay publishes asynchronously
 
-// PullEvents 获取并清空聚合根的事件列表
-// 这是领域事件模式的标准实践：
-// 1. 聚合根在状态变更时调用 recordEvent() 记录事件
-// 2. UoW 在事务中调用 PullEvents() 获取事件并保存到 outbox 表
-// 3. PullEvents 会清空事件列表，避免重复保存
+// PullEvents Get and clear aggregate root's event list
+// This is standard practice for domain event pattern:
+// 1. Aggregate root calls recordEvent() when state changes
+// 2. UoW calls PullEvents() in transaction to get events and save to outbox table
+// 3. PullEvents clears event list to avoid duplicate saves
 func (o *Order) PullEvents() []shared.DomainEvent {
 	events := make([]shared.DomainEvent, len(o.events))
 	copy(events, o.events)
@@ -397,12 +397,12 @@ func (o *Order) PullEvents() []shared.DomainEvent {
 	return events
 }
 
-// recordEvent 记录领域事件
+// recordEvent Record domain event
 func (o *Order) recordEvent(event shared.DomainEvent) {
 	o.events = append(o.events, event)
 }
 
-// OrderItem Getters - 允许读取，但不提供外部修改
+// OrderItem Getters - Allow reading but no external modification
 
 func (item OrderItem) ID() string          { return item.id }
 func (item OrderItem) ProductID() string   { return item.productID }
@@ -411,5 +411,5 @@ func (item OrderItem) Quantity() int       { return item.quantity }
 func (item OrderItem) UnitPrice() shared.Money    { return item.unitPrice }
 func (item OrderItem) Subtotal() shared.Money     { return item.subtotal }
 
-// 编译时检查 Order 实现了 AggregateRoot 接口
+// Compile-time check that Order implements AggregateRoot interface
 var _ shared.AggregateRoot = (*Order)(nil)

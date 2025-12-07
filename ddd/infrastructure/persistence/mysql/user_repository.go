@@ -11,33 +11,33 @@ import (
 	"gorm.io/gorm"
 )
 
-// UserRepository 用户仓储的MySQL/GORM实现
-// DDD原则：仓储只负责聚合根的持久化，不负责发布事件
-// GORM使用规范：禁止使用关联功能，保持DDD聚合边界
+// UserRepository MySQL/GORM implementation of user repository
+// DDD principle: Repository is only responsible for persistence of aggregate roots, not event publishing
+// GORM usage specification: Association features are prohibited to maintain DDD aggregate boundaries
 type UserRepository struct {
 	db *gorm.DB
 }
 
-// NewUserRepository 创建用户仓储
+// NewUserRepository Create user repository
 func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// NextIdentity 生成新的用户ID
+// NextIdentity Generate new user ID
 func (r *UserRepository) NextIdentity() string {
 	return "user-" + uuid.New().String()
 }
 
-// Save 保存用户（创建或更新）
+// Save Save user (create or update)
 func (r *UserRepository) Save(ctx context.Context, u *user.User) error {
 	userPO := po.FromUserDomain(u)
 
-	// 使用 Save 方法，GORM 会根据主键判断是 Create 还是 Update
+	// Use Save method, GORM will determine whether to Create or Update based on primary key
 	result := r.db.WithContext(ctx).Save(userPO)
 	return result.Error
 }
 
-// FindByID 根据ID查找用户
+// FindByID Find user by ID
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var userPO po.UserPO
 
@@ -52,7 +52,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, e
 	return userPO.ToDomain(), nil
 }
 
-// FindByEmail 根据邮箱查找用户
+// FindByEmail Find user by email
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.User, error) {
 	var userPO po.UserPO
 
@@ -67,8 +67,8 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 	return userPO.ToDomain(), nil
 }
 
-// Remove 删除用户（逻辑删除：标记为不活跃）
-// DDD原则：推荐逻辑删除而非物理删除，保留业务历史
+// Remove Delete user (logical deletion: mark as inactive)
+// DDD principle: Logical deletion is recommended over physical deletion to preserve business history
 func (r *UserRepository) Remove(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).
 		Model(&po.UserPO{}).
@@ -85,5 +85,5 @@ func (r *UserRepository) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
-// 编译时检查接口实现
+// Compile-time interface implementation check
 var _ user.Repository = (*UserRepository)(nil)

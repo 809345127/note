@@ -2,43 +2,43 @@ package user
 
 import "context"
 
-// Repository 用户仓储接口
-// DDD原则：
-// 1. 仓储只负责聚合根的持久化
-// 2. 不应该暴露批量查询（如FindAll），这类操作应该放在查询服务中
-// 3. 使用NextIdentity生成ID，而非在实体中直接生成（便于测试和ID策略调整）
-// 4. 包含context.Context以支持超时、取消和事务
+// Repository User repository interface
+// DDD principles:
+// 1. Repository only responsible for aggregate root persistence
+// 2. Should not expose batch queries (like FindAll), such operations should be in query service
+// 3. Use NextIdentity to generate ID, not directly in entity (facilitates testing and ID strategy adjustment)
+// 4. Include context.Context to support timeout, cancellation and transaction
 type Repository interface {
-	// NextIdentity 生成新的用户ID（DDD推荐在仓储中生成ID）
+	// NextIdentity Generate new user ID (DDD recommends generating ID in repository)
 	NextIdentity() string
 
-	// Save 保存或更新用户聚合根（包括聚合内的所有实体）
-	// 如果user.Version() == 0表示新建，否则为更新
+	// Save Save or update user aggregate root (including all entities within aggregate)
+	// If user.Version() == 0 means create, else update
 	Save(ctx context.Context, user *User) error
 
-	// FindByID 根据ID查找用户聚合根
+	// FindByID Find user aggregate root by ID
 	FindByID(ctx context.Context, id string) (*User, error)
 
-	// FindByEmail 根据邮箱查找用户（业务唯一性约束）
+	// FindByEmail Find user by email (business uniqueness constraint)
 	FindByEmail(ctx context.Context, email string) (*User, error)
 
-	// Remove 逻辑删除用户聚合根（DDD推荐逻辑删除而非物理删除）
+	// Remove Logically delete user aggregate root (DDD recommends logical delete over physical delete)
 	Remove(ctx context.Context, id string) error
 }
 
-// QueryService 查询服务接口（CQRS模式中的Q端）
-// DDD区分：命令（修改）和查询（读取）应该分离
-// 仓储负责命令操作（加载聚合根，保存聚合根）
-// 查询服务负责复杂查询，不受聚合边界限制
+// QueryService Query service interface (Q-side in CQRS pattern)
+// DDD distinction: Command (modify) and Query (read) should be separated
+// Repository handles command operations (load aggregate root, save aggregate root)
+// Query service handles complex queries, not limited by aggregate boundaries
 type QueryService interface {
-	// SearchUsers 搜索用户（支持分页、排序）
+	// SearchUsers Search users (supports pagination, sorting)
 	SearchUsers(criteria SearchCriteria) ([]*User, error)
 
-	// CountUsers 统计用户数量
+	// CountUsers Count users
 	CountUsers(criteria SearchCriteria) (int, error)
 }
 
-// SearchCriteria 通用查询条件
+// SearchCriteria Generic search criteria
 type SearchCriteria struct {
 	Filters   map[string]interface{}
 	SortBy    string

@@ -8,6 +8,9 @@ import (
 	"syscall"
 
 	"ddd-example/api"
+	healthapi "ddd-example/api/health"
+	orderapi "ddd-example/api/order"
+	userapi "ddd-example/api/user"
 	orderapp "ddd-example/application/order"
 	userapp "ddd-example/application/user"
 	"ddd-example/config"
@@ -20,7 +23,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// App 应用程序结构体
+// App Application structure
 type App struct {
 	config *config.Config
 	router *api.Router
@@ -28,9 +31,9 @@ type App struct {
 	db     *gorm.DB
 }
 
-// NewApp 创建应用程序
+// NewApp Create application
 func NewApp(cfg *config.Config) *App {
-	// 初始化日志
+	// Initialize logger
 	if err := logger.Init(&cfg.Log); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to initialize logger")
 	}
@@ -45,10 +48,10 @@ func NewApp(cfg *config.Config) *App {
 	var orderRepo order.Repository
 	var db *gorm.DB
 
-	// 事件发布器（用于事件订阅/处理）
+	// Event publisher (for event subscription/processing)
 	eventPublisher := mocks.NewMockEventPublisher()
 
-	// 根据配置选择仓储实现
+	// Select repository implementation based on configuration
 	if cfg.Database.Type == "mysql" {
 		logger.Info().Msg("Using MySQL/GORM persistence layer")
 
@@ -69,7 +72,7 @@ func NewApp(cfg *config.Config) *App {
 			logger.Fatal().Err(err).Msg("Failed to connect to MySQL")
 		}
 
-		// 测试连接
+		// Test connection
 		sqlDB, err := db.DB()
 		if err != nil {
 			logger.Fatal().Err(err).Msg("Failed to get underlying sql.DB")
@@ -80,7 +83,7 @@ func NewApp(cfg *config.Config) *App {
 
 		logger.Info().Msg("Connected to MySQL successfully")
 
-		// 开发环境自动迁移
+		// Auto migration in development environment
 		if cfg.IsDevelopment() {
 			if err := mysql.AutoMigrate(db); err != nil {
 				logger.Fatal().Err(err).Msg("Failed to auto migrate")
@@ -95,24 +98,24 @@ func NewApp(cfg *config.Config) *App {
 		orderRepo = mocks.NewMockOrderRepository()
 	}
 
-	// 创建应用服务
+	// Create application services
 	userService := userapp.NewApplicationService(userRepo, orderRepo, eventPublisher)
 	orderService := orderapp.NewApplicationService(orderRepo, userRepo, eventPublisher)
 
-	// 创建控制器（健康检查需要传入sql.DB用于检查连接）
+	// Create controllers (health check needs sql.DB for connection check)
 	var sqlDB interface{}
 	if db != nil {
 		sqlDB, _ = db.DB()
 	}
-	healthController := api.NewHealthController(cfg, sqlDB)
-	userController := api.NewUserController(userService)
-	orderController := api.NewOrderController(orderService)
+	healthController := healthapi.NewController(cfg, sqlDB)
+	userController := userapi.NewController(userService)
+	orderController := orderapi.NewController(orderService)
 
-	// 创建路由
+	// Create router
 	router := api.NewRouter(cfg, healthController, userController, orderController)
 	router.SetupRoutes()
 
-	// 创建HTTP服务器
+	// Create HTTP server
 	server := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      router.GetEngine(),
@@ -128,9 +131,9 @@ func NewApp(cfg *config.Config) *App {
 	}
 }
 
-// Run 运行应用程序
+// Run runs the application
 func (a *App) Run() error {
-	// 启动服务器
+	// Start server
 	go func() {
 		logger.Info().
 			Str("port", a.config.Server.Port).
@@ -142,14 +145,14 @@ func (a *App) Run() error {
 		}
 	}()
 
-	// 等待中断信号
+	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info().Msg("Shutting down server...")
 
-	// 优雅关闭
+	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), a.config.Server.ShutdownTimeout)
 	defer cancel()
 
@@ -158,7 +161,7 @@ func (a *App) Run() error {
 		return err
 	}
 
-	// 关闭数据库连接
+	// Close database connection
 	if a.db != nil {
 		sqlDB, err := a.db.DB()
 		if err == nil {
@@ -172,7 +175,7 @@ func (a *App) Run() error {
 	return nil
 }
 
-// GetServer 获取服务器实例（用于测试）
+// GetServer Get server instance (for testing)
 func (a *App) GetServer() *http.Server {
 	return a.server
 }

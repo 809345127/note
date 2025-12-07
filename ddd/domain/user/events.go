@@ -2,7 +2,7 @@ package user
 
 import "time"
 
-// UserCreatedEvent 用户创建事件
+// UserCreatedEvent User created event
 type UserCreatedEvent struct {
 	userID     string
 	name       string

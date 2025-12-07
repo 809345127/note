@@ -1,4 +1,4 @@
-package api
+package response
 
 import (
 	"net/http"
@@ -8,7 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Response 通用响应结构
+// RequestIDKey context key for request id propagation
+const RequestIDKey = "request_id"
+
+// Response Common response structure
 type Response struct {
 	Success   bool        `json:"success"`
 	Data      interface{} `json:"data,omitempty"`
@@ -18,7 +21,7 @@ type Response struct {
 	RequestID string      `json:"request_id,omitempty"`
 }
 
-// NewSuccessResponse 创建成功响应
+// NewSuccessResponse Create success response
 func NewSuccessResponse(data interface{}, message string) *Response {
 	return &Response{
 		Success: true,
@@ -28,7 +31,7 @@ func NewSuccessResponse(data interface{}, message string) *Response {
 	}
 }
 
-// NewErrorResponse 创建错误响应
+// NewErrorResponse Create error response
 func NewErrorResponse(err error, message string, code int) *Response {
 	return &Response{
 		Success: false,
@@ -38,7 +41,7 @@ func NewErrorResponse(err error, message string, code int) *Response {
 	}
 }
 
-// getRequestID 从上下文获取请求ID
+// getRequestID Get request ID from context
 func getRequestID(c *gin.Context) string {
 	if requestID, exists := c.Get(RequestIDKey); exists {
 		if id, ok := requestID.(string); ok {
@@ -48,7 +51,7 @@ func getRequestID(c *gin.Context) string {
 	return ""
 }
 
-// HandleError 统一错误处理
+// HandleError Unified error handling
 func HandleError(c *gin.Context, err error, message string, code int) {
 	requestID := getRequestID(c)
 	response := &Response{
@@ -61,7 +64,7 @@ func HandleError(c *gin.Context, err error, message string, code int) {
 	c.JSON(code, response)
 }
 
-// HandleAppError 处理应用错误（自动映射HTTP状态码）
+// HandleAppError Handle application error (automatically maps HTTP status code)
 func HandleAppError(c *gin.Context, err error) {
 	requestID := getRequestID(c)
 	appErr := errors.MapDomainError(err)
@@ -76,7 +79,7 @@ func HandleAppError(c *gin.Context, err error) {
 	c.JSON(appErr.HTTPStatusCode(), response)
 }
 
-// HandleSuccess 统一成功处理
+// HandleSuccess Unified success handling
 func HandleSuccess(c *gin.Context, data interface{}, message string) {
 	requestID := getRequestID(c)
 	response := &Response{
@@ -89,7 +92,7 @@ func HandleSuccess(c *gin.Context, data interface{}, message string) {
 	c.JSON(http.StatusOK, response)
 }
 
-// HandleCreated 创建成功处理
+// HandleCreated Create success handling
 func HandleCreated(c *gin.Context, data interface{}, message string) {
 	requestID := getRequestID(c)
 	response := &Response{
@@ -102,12 +105,12 @@ func HandleCreated(c *gin.Context, data interface{}, message string) {
 	c.JSON(http.StatusCreated, response)
 }
 
-// HandleNoContent 无内容响应
+// HandleNoContent No content response
 func HandleNoContent(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// PaginatedResponse 分页响应
+// PaginatedResponse Paginated response
 type PaginatedResponse struct {
 	Success    bool        `json:"success"`
 	Data       interface{} `json:"data"`
@@ -117,7 +120,7 @@ type PaginatedResponse struct {
 	RequestID  string      `json:"request_id,omitempty"`
 }
 
-// Pagination 分页信息
+// Pagination Pagination information
 type Pagination struct {
 	Page       int   `json:"page"`
 	PageSize   int   `json:"page_size"`
@@ -125,7 +128,7 @@ type Pagination struct {
 	TotalPages int   `json:"total_pages"`
 }
 
-// HandlePaginated 分页响应处理
+// HandlePaginated Paginated response handling
 func HandlePaginated(c *gin.Context, data interface{}, pagination Pagination, message string) {
 	requestID := getRequestID(c)
 	response := &PaginatedResponse{

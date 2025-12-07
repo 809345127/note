@@ -7,13 +7,13 @@ import (
 	"ddd-example/domain/shared"
 )
 
-// MockEventPublisher 领域事件发布器的Mock实现
+// MockEventPublisher Mock implementation of domain event publisher
 type MockEventPublisher struct {
 	handlers map[string][]shared.EventHandler
 	mu       sync.RWMutex
 }
 
-// NewMockEventPublisher 创建Mock事件发布器
+// NewMockEventPublisher Create Mock event publisher
 func NewMockEventPublisher() *MockEventPublisher {
 	return &MockEventPublisher{
 		handlers: make(map[string][]shared.EventHandler),
@@ -27,11 +27,11 @@ func (p *MockEventPublisher) Publish(event shared.DomainEvent) error {
 
 	if exists {
 		for _, handler := range handlers {
-			go handler.Handle(event) // 异步处理事件
+			go handler.Handle(event) // Handle event asynchronously
 		}
 	}
 
-	// 模拟事件发布日志
+	// Simulate event publishing log
 	fmt.Printf("[EVENT PUBLISHED] %s at %s for aggregate %s\n",
 		event.EventName(),
 		event.OccurredOn().Format("2006-01-02 15:04:05"),
@@ -44,10 +44,10 @@ func (p *MockEventPublisher) Subscribe(eventName string, handler shared.EventHan
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// 检查是否已订阅
+	// Check if already subscribed
 	for _, h := range p.handlers[eventName] {
 		if h.Name() == handler.Name() {
-			return nil // 已存在，不再添加
+			return nil // Already exists, do not add again
 		}
 	}
 
@@ -55,7 +55,7 @@ func (p *MockEventPublisher) Subscribe(eventName string, handler shared.EventHan
 	return nil
 }
 
-// Unsubscribe 取消订阅
+// Unsubscribe Unsubscribe
 func (p *MockEventPublisher) Unsubscribe(eventName string, handler shared.EventHandler) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -75,22 +75,22 @@ func (p *MockEventPublisher) Unsubscribe(eventName string, handler shared.EventH
 	return nil
 }
 
-// MockHandler Mock事件处理器
+// MockHandler Mock event handler
 type MockHandler struct {
 	name string
 }
 
-// NewMockHandler 创建Mock处理器
+// NewMockHandler Create Mock handler
 func NewMockHandler(name string) *MockHandler {
 	return &MockHandler{name: name}
 }
 
-// Handle 处理事件（仅用于测试）
+// Handle Handle event (only for testing)
 func (h *MockHandler) Handle(event shared.DomainEvent) error {
 	return nil
 }
 
-// Name 返回处理器名称
+// Name Return handler name
 func (h *MockHandler) Name() string {
 	return h.name
 }

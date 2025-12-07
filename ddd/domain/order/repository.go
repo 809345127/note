@@ -2,36 +2,36 @@ package order
 
 import "context"
 
-// Repository 订单仓储接口
+// Repository Order repository interface
 type Repository interface {
-	// NextIdentity 生成新的订单ID
+	// NextIdentity Generate new order ID
 	NextIdentity() string
 
-	// Save 保存或更新订单聚合根
-	// 如果order.Version() == 0表示新建，否则为更新
-	// 仓储只负责持久化，事件由 UoW 收集并保存到 outbox 表
+	// Save Save or update order aggregate root
+	// If order.Version() == 0 means create, else update
+	// Repository only handles persistence, events collected by UoW and saved to outbox table
 	Save(ctx context.Context, order *Order) error
 
-	// FindByID 根据ID查找订单聚合根
+	// FindByID Find order aggregate root by ID
 	FindByID(ctx context.Context, id string) (*Order, error)
 
-	// FindByUserID 查找用户的订单（受控查询）
+	// FindByUserID Find user's orders (controlled query)
 	FindByUserID(ctx context.Context, userID string) ([]*Order, error)
 
-	// FindDeliveredOrdersByUserID 查找用户已送达的订单（CQRS中的受控查询）
+	// FindDeliveredOrdersByUserID Find user's delivered orders (controlled query in CQRS)
 	FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*Order, error)
 
-	// Remove 逻辑删除订单聚合根
+	// Remove Logically delete order aggregate root
 	Remove(ctx context.Context, id string) error
 }
 
-// QueryService 查询服务接口（CQRS模式中的Q端）
+// QueryService Query service interface (Q-side in CQRS pattern)
 type QueryService interface {
-	// SearchOrders 搜索订单
+	// SearchOrders Search orders
 	SearchOrders(criteria SearchCriteria) ([]*Order, error)
 }
 
-// SearchCriteria 通用查询条件
+// SearchCriteria Generic query criteria
 type SearchCriteria struct {
 	Filters   map[string]interface{}
 	SortBy    string

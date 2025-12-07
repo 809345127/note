@@ -7,12 +7,12 @@ import (
 	"ddd-example/domain/shared"
 )
 
-// OrderPO 订单持久化对象
-// 注意：只用于数据库映射，不包含任何业务逻辑
-// 禁止在此定义 GORM 关联
+// OrderPO Order persistence object
+// Note: Only used for database mapping, does not contain any business logic
+// Defining GORM associations is prohibited here
 type OrderPO struct {
 	ID            string    `gorm:"primaryKey;size:64"`
-	UserID        string    `gorm:"size:64;index;not null"` // 只存ID，不关联User
+	UserID        string    `gorm:"size:64;index;not null"` // Only store ID, no association with User
 	Status        string    `gorm:"size:20;not null"`
 	TotalAmount   int64     `gorm:"not null"`
 	TotalCurrency string    `gorm:"size:3;not null"`
@@ -21,15 +21,15 @@ type OrderPO struct {
 	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
 }
 
-// TableName 指定表名
+// TableName Specify table name
 func (OrderPO) TableName() string {
 	return "orders"
 }
 
-// OrderItemPO 订单项持久化对象
+// OrderItemPO Order item persistence object
 type OrderItemPO struct {
 	ID               string `gorm:"primaryKey;size:128"`
-	OrderID          string `gorm:"size:64;index;not null"` // 只存ID，不用GORM关联
+	OrderID          string `gorm:"size:64;index;not null"` // Only store ID, no GORM association
 	ProductID        string `gorm:"size:64;not null"`
 	ProductName      string `gorm:"size:255;not null"`
 	Quantity         int    `gorm:"not null"`
@@ -39,12 +39,12 @@ type OrderItemPO struct {
 	SubtotalCurrency string `gorm:"size:3;not null"`
 }
 
-// TableName 指定表名
+// TableName Specify table name
 func (OrderItemPO) TableName() string {
 	return "order_items"
 }
 
-// FromOrderDomain 将领域模型转换为持久化对象
+// FromOrderDomain Convert domain model to persistence object
 func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 	orderPO := &OrderPO{
 		ID:            o.ID(),
@@ -76,9 +76,9 @@ func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 	return orderPO, itemPOs
 }
 
-// ToDomain 将持久化对象转换为领域模型
+// ToDomain Convert persistence object to domain model
 func (po *OrderPO) ToDomain(itemPOs []OrderItemPO) *order.Order {
-	// 转换订单项
+	// Convert order items
 	items := make([]order.OrderItem, len(itemPOs))
 	for i, itemPO := range itemPOs {
 		items[i] = order.RebuildItemFromDTO(order.ItemReconstructionDTO{

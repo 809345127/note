@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 应用服务
+# Application services
   app:
     build:
       context: .
@@ -26,7 +26,7 @@ services:
     networks:
       - ddd-network
 
-  # MySQL服务
+# MySQL service
   mysql:
     image: mysql:8.0
     container_name: ddd-example-mysql
@@ -50,7 +50,7 @@ services:
     networks:
       - ddd-network
 
-  # Redis服务（可选，用于缓存）
+# Redis service (optional, used for caching)
   redis:
     image: redis:7-alpine
     container_name: ddd-example-redis

@@ -1,17 +1,17 @@
 /*
-Package order 应用层 - 订单业务流程编排
+Package order Application Layer - Order Business Process Orchestration
 
-应用层的职责：
-1. 接收外部请求（通常来自Controller）
-2. 调用领域服务进行业务规则验证
-3. 调用聚合根方法执行业务操作
-4. 调用仓储保存聚合根（UoW 会将事件保存到 outbox 表）
-5. 返回结果给调用方
+Responsibilities of Application Layer:
+1. Receive external requests (usually from Controller)
+2. Call domain services for business rule validation
+3. Call aggregate root methods to execute business operations
+4. Call repository to save aggregate roots (UoW will save events to outbox table)
+5. Return results to caller
 
-重要：应用服务不直接发布事件！
-- 事件由 UoW 在事务提交前保存到 outbox 表
-- 后台 OutboxProcessor 异步读取 outbox 表并发布到消息队列
-- 这保证了事件与业务数据的原子性
+Important: Application services do not directly publish events!
+- Events are saved to outbox table by UoW before transaction commit
+- OutboxProcessor reads outbox table asynchronously and publishes to message queue
+- This ensures atomicity of events and business data
 */
 package order
 
@@ -25,7 +25,7 @@ import (
 	"ddd-example/domain/user"
 )
 
-// userCheckerAdapter 适配器：将 user.Repository 适配为 order.UserChecker
+// userCheckerAdapter Adapter: adapts user.Repository to order.UserChecker
 type userCheckerAdapter struct {
 	userRepo user.Repository
 }
@@ -38,7 +38,7 @@ func (a *userCheckerAdapter) IsUserActive(ctx context.Context, userID string) (b
 	return u.IsActive(), nil
 }
 
-// ApplicationService 订单应用服务 - 协调订单相关的业务流程
+// ApplicationService Order application service - coordinates order-related business processes
 type ApplicationService struct {
 	orderRepo          order.Repository
 	userRepo           user.Repository
@@ -47,7 +47,7 @@ type ApplicationService struct {
 	eventPublisher     shared.DomainEventPublisher
 }
 
-// NewApplicationService 创建订单应用服务
+// NewApplicationService Create order application service
 func NewApplicationService(
 	orderRepo order.Repository,
 	userRepo user.Repository,
@@ -64,16 +64,16 @@ func NewApplicationService(
 }
 
 // ============================================================================
-// DTO定义 - 数据传输对象
+// DTO Definitions - Data Transfer Objects
 // ============================================================================
 
-// CreateOrderRequest 创建订单请求DTO
+// CreateOrderRequest Create order request DTO
 type CreateOrderRequest struct {
 	UserID string             `json:"user_id" binding:"required"`
 	Items  []OrderItemRequest `json:"items" binding:"required,min=1"`
 }
 
-// OrderItemRequest 订单项请求DTO
+// OrderItemRequest Order item request DTO
 type OrderItemRequest struct {
 	ProductID   string `json:"product_id" binding:"required"`
 	ProductName string `json:"product_name" binding:"required"`
@@ -82,7 +82,7 @@ type OrderItemRequest struct {
 	Currency    string `json:"currency" binding:"required"`
 }
 
-// OrderResponse 订单响应DTO
+// OrderResponse Order response DTO
 type OrderResponse struct {
 	ID          string              `json:"id"`
 	UserID      string              `json:"user_id"`
@@ -93,7 +93,7 @@ type OrderResponse struct {
 	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
-// OrderItemResponse 订单项响应DTO
+// OrderItemResponse Order item response DTO
 type OrderItemResponse struct {
 	ProductID   string        `json:"product_id"`
 	ProductName string        `json:"product_name"`
@@ -102,19 +102,19 @@ type OrderItemResponse struct {
 	Subtotal    MoneyResponse `json:"subtotal"`
 }
 
-// MoneyResponse 金额响应DTO
+// MoneyResponse Money response DTO
 type MoneyResponse struct {
 	Amount   int64  `json:"amount"`
 	Currency string `json:"currency"`
 }
 
 // ============================================================================
-// 应用服务方法 - 业务流程编排
+// Application Service Methods - Business Process Orchestration
 // ============================================================================
 
-// CreateOrder 创建订单
+// CreateOrder Create order
 func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*OrderResponse, error) {
-	// 检查用户是否可以下单
+	// Check if user can place order
 	canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderReq
 		return nil, errors.New("user cannot place order")
 	}
 
-	// 转换订单项请求为领域模型
+	// Convert order item requests to domain model
 	requests := make([]order.ItemRequest, len(req.Items))
 	for i, item := range req.Items {
 		unitPrice := shared.NewMoney(item.UnitPrice, item.Currency)
@@ -135,13 +135,13 @@ func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderReq
 		}
 	}
 
-	// 创建订单实体
+	// Create order entity
 	o, err := order.NewOrder(req.UserID, requests)
 	if err != nil {
 		return nil, err
 	}
 
-	// 保存订单
+	// Save order
 	if err := s.orderRepo.Save(ctx, o); err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderReq
 	return s.convertToResponse(o), nil
 }
 
-// GetOrder 获取订单信息
+// GetOrder Get order information
 func (s *ApplicationService) GetOrder(ctx context.Context, orderID string) (*OrderResponse, error) {
 	o, err := s.orderRepo.FindByID(ctx, orderID)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *ApplicationService) GetOrder(ctx context.Context, orderID string) (*Ord
 	return s.convertToResponse(o), nil
 }
 
-// GetUserOrders 获取用户的所有订单
+// GetUserOrders Get all orders for user
 func (s *ApplicationService) GetUserOrders(ctx context.Context, userID string) ([]*OrderResponse, error) {
 	orders, err := s.orderRepo.FindByUserID(ctx, userID)
 	if err != nil {
@@ -174,23 +174,23 @@ func (s *ApplicationService) GetUserOrders(ctx context.Context, userID string) (
 	return responses, nil
 }
 
-// UpdateOrderStatusRequest 更新订单状态请求DTO
+// UpdateOrderStatusRequest Update order status request DTO
 type UpdateOrderStatusRequest struct {
 	OrderID string `json:"order_id" binding:"required"`
 	Status  string `json:"status" binding:"required,oneof=PENDING CONFIRMED SHIPPED DELIVERED CANCELLED"`
 }
 
-// UpdateOrderStatus 更新订单状态
+// UpdateOrderStatus Update order status
 func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOrderStatusRequest) error {
 	o, err := s.orderRepo.FindByID(ctx, req.OrderID)
 	if err != nil {
 		return err
 	}
 
-	// 根据请求的状态更新订单
+	// Update order based on requested status
 	switch order.Status(req.Status) {
 	case order.StatusPending:
-		// 不需要任何操作
+		// No action needed
 	case order.StatusConfirmed:
 		if err := o.Confirm(); err != nil {
 			return err
@@ -214,24 +214,24 @@ func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOr
 	return s.orderRepo.Save(ctx, o)
 }
 
-// ProcessOrder 处理订单
+// ProcessOrder Process order
 func (s *ApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
-	// 1. 通过领域服务验证订单是否可以处理
+	// 1. Verify if order can be processed through domain service
 	o, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
 	if err != nil {
 		return err
 	}
 
-	// 2. 执行状态变更（聚合根方法，内部会记录事件）
+	// 2. Execute status change (aggregate root method, will record events internally)
 	if err := o.Confirm(); err != nil {
 		return err
 	}
 
-	// 3. 保存（UoW 会将事件保存到 outbox 表，后台异步发布）
+	// 3. Save (UoW will save events to outbox table, published asynchronously in background)
 	return s.orderRepo.Save(ctx, o)
 }
 
-// convertToResponse 将订单实体转换为响应DTO
+// convertToResponse Convert order entity to response DTO
 func (s *ApplicationService) convertToResponse(o *order.Order) *OrderResponse {
 	items := make([]OrderItemResponse, len(o.Items()))
 	for i, item := range o.Items() {

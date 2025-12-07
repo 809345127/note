@@ -10,19 +10,19 @@ import (
 )
 
 func main() {
-	// 解析命令行参数
+	// Parse command line arguments
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to config file")
 	flag.Parse()
 
-	// 加载配置
+	// Load configuration
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 创建并运行应用
+	// Create and run application
 	app := cmd.NewApp(cfg)
 
 	if err := app.Run(); err != nil {

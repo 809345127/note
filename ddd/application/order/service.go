@@ -5,11 +5,11 @@ Responsibilities of Application Layer:
 1. Receive external requests (usually from Controller)
 2. Call domain services for business rule validation
 3. Call aggregate root methods to execute business operations
-4. Call repository to save aggregate roots (UoW will save events to outbox table)
+4. Use UoW to manage transactions and event collection (Outbox pattern)
 5. Return results to caller
 
 Important: Application services do not directly publish events!
-- Events are saved to outbox table by UoW before transaction commit
+- UoW collects events from aggregates and saves to outbox table before commit
 - OutboxProcessor reads outbox table asynchronously and publishes to message queue
 - This ensures atomicity of events and business data
 */
@@ -44,14 +44,14 @@ type ApplicationService struct {
 	userRepo           user.Repository
 	orderDomainService *order.DomainService
 	userDomainService  *user.DomainService
-	eventPublisher     shared.DomainEventPublisher
+	uow                shared.UnitOfWork
 }
 
 // NewApplicationService Create order application service
 func NewApplicationService(
 	orderRepo order.Repository,
 	userRepo user.Repository,
-	eventPublisher shared.DomainEventPublisher,
+	uow shared.UnitOfWork,
 ) *ApplicationService {
 	userChecker := &userCheckerAdapter{userRepo: userRepo}
 	return &ApplicationService{
@@ -59,7 +59,7 @@ func NewApplicationService(
 		userRepo:           userRepo,
 		orderDomainService: order.NewDomainService(userChecker, orderRepo),
 		userDomainService:  user.NewDomainService(userRepo),
-		eventPublisher:     eventPublisher,
+		uow:                uow,
 	}
 }
 
@@ -113,36 +113,49 @@ type MoneyResponse struct {
 // ============================================================================
 
 // CreateOrder Create order
+// Uses UoW to manage transaction and collect events from aggregate
 func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*OrderResponse, error) {
-	// Check if user can place order
-	canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
-	if err != nil {
-		return nil, err
-	}
-	if !canPlaceOrder {
-		return nil, errors.New("user cannot place order")
-	}
+	var o *order.Order
 
-	// Convert order item requests to domain model
-	requests := make([]order.ItemRequest, len(req.Items))
-	for i, item := range req.Items {
-		unitPrice := shared.NewMoney(item.UnitPrice, item.Currency)
-		requests[i] = order.ItemRequest{
-			ProductID:   item.ProductID,
-			ProductName: item.ProductName,
-			Quantity:    item.Quantity,
-			UnitPrice:   *unitPrice,
+	err := s.uow.Execute(ctx, func(ctx context.Context) error {
+		// Check if user can place order
+		canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
+		if err != nil {
+			return err
 		}
-	}
+		if !canPlaceOrder {
+			return errors.New("user cannot place order")
+		}
 
-	// Create order entity
-	o, err := order.NewOrder(req.UserID, requests)
+		// Convert order item requests to domain model
+		requests := make([]order.ItemRequest, len(req.Items))
+		for i, item := range req.Items {
+			unitPrice := shared.NewMoney(item.UnitPrice, item.Currency)
+			requests[i] = order.ItemRequest{
+				ProductID:   item.ProductID,
+				ProductName: item.ProductName,
+				Quantity:    item.Quantity,
+				UnitPrice:   *unitPrice,
+			}
+		}
+
+		// Create order entity (aggregate root records events internally)
+		o, err = order.NewOrder(req.UserID, requests)
+		if err != nil {
+			return err
+		}
+
+		// Save order (uses transaction from context)
+		if err := s.orderRepo.Save(ctx, o); err != nil {
+			return err
+		}
+
+		// Register aggregate with UoW for event collection
+		s.uow.RegisterNew(o)
+		return nil
+	})
+
 	if err != nil {
-		return nil, err
-	}
-
-	// Save order
-	if err := s.orderRepo.Save(ctx, o); err != nil {
 		return nil, err
 	}
 
@@ -215,20 +228,29 @@ func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOr
 }
 
 // ProcessOrder Process order
+// Uses UoW to manage transaction and collect events
 func (s *ApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
-	// 1. Verify if order can be processed through domain service
-	o, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
-	if err != nil {
-		return err
-	}
+	return s.uow.Execute(ctx, func(ctx context.Context) error {
+		// 1. Verify if order can be processed through domain service
+		o, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
+		if err != nil {
+			return err
+		}
 
-	// 2. Execute status change (aggregate root method, will record events internally)
-	if err := o.Confirm(); err != nil {
-		return err
-	}
+		// 2. Execute status change (aggregate root method)
+		if err := o.Confirm(); err != nil {
+			return err
+		}
 
-	// 3. Save (UoW will save events to outbox table, published asynchronously in background)
-	return s.orderRepo.Save(ctx, o)
+		// 3. Save (uses transaction from context)
+		if err := s.orderRepo.Save(ctx, o); err != nil {
+			return err
+		}
+
+		// 4. Register aggregate for event collection
+		s.uow.RegisterDirty(o)
+		return nil
+	})
 }
 
 // convertToResponse Convert order entity to response DTO

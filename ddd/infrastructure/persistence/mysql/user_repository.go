@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"ddd-example/domain/user"
+	"ddd-example/infrastructure/persistence"
 	"ddd-example/infrastructure/persistence/mysql/po"
 
 	"github.com/google/uuid"
@@ -23,6 +24,14 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+// getDB returns the transaction from context if available, otherwise the default db
+func (r *UserRepository) getDB(ctx context.Context) *gorm.DB {
+	if tx := persistence.TxFromContext(ctx); tx != nil {
+		return tx
+	}
+	return r.db.WithContext(ctx)
+}
+
 // NextIdentity Generate new user ID
 func (r *UserRepository) NextIdentity() string {
 	return "user-" + uuid.New().String()
@@ -33,7 +42,7 @@ func (r *UserRepository) Save(ctx context.Context, u *user.User) error {
 	userPO := po.FromUserDomain(u)
 
 	// Use Save method, GORM will determine whether to Create or Update based on primary key
-	result := r.db.WithContext(ctx).Save(userPO)
+	result := r.getDB(ctx).Save(userPO)
 	return result.Error
 }
 
@@ -41,7 +50,7 @@ func (r *UserRepository) Save(ctx context.Context, u *user.User) error {
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var userPO po.UserPO
 
-	result := r.db.WithContext(ctx).First(&userPO, "id = ?", id)
+	result := r.getDB(ctx).First(&userPO, "id = ?", id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")
@@ -56,7 +65,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, e
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.User, error) {
 	var userPO po.UserPO
 
-	result := r.db.WithContext(ctx).First(&userPO, "email = ?", email)
+	result := r.getDB(ctx).First(&userPO, "email = ?", email)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")
@@ -70,7 +79,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 // Remove Delete user (logical deletion: mark as inactive)
 // DDD principle: Logical deletion is recommended over physical deletion to preserve business history
 func (r *UserRepository) Remove(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).
+	result := r.getDB(ctx).
 		Model(&po.UserPO{}).
 		Where("id = ?", id).
 		Update("is_active", false)

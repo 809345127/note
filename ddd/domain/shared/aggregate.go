@@ -19,13 +19,6 @@ type AggregateRoot interface {
 	PullEvents() []DomainEvent
 }
 
-// IsAggregateRoot Type marker function
-// Used for compile-time checking if a type implements the AggregateRoot interface
-// Usage: var _ = IsAggregateRoot(&User{})
-func IsAggregateRoot(agg AggregateRoot) AggregateRoot {
-	return agg
-}
-
 // Entity Entity Interface
 // Differences between entity and value object:
 // 1. Entity has a unique identifier (ID)

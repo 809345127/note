@@ -15,6 +15,7 @@ import (
 	userapp "ddd-example/application/user"
 	"ddd-example/config"
 	"ddd-example/domain/order"
+	"ddd-example/domain/shared"
 	"ddd-example/domain/user"
 	"ddd-example/infrastructure/persistence/mocks"
 	"ddd-example/infrastructure/persistence/mysql"
@@ -46,12 +47,10 @@ func NewApp(cfg *config.Config) *App {
 
 	var userRepo user.Repository
 	var orderRepo order.Repository
+	var uow shared.UnitOfWork
 	var db *gorm.DB
 
-	// Event publisher (for event subscription/processing)
-	eventPublisher := mocks.NewMockEventPublisher()
-
-	// Select repository implementation based on configuration
+	// Select repository and UoW implementation based on configuration
 	if cfg.Database.Type == "mysql" {
 		logger.Info().Msg("Using MySQL/GORM persistence layer")
 
@@ -92,15 +91,17 @@ func NewApp(cfg *config.Config) *App {
 
 		userRepo = mysql.NewUserRepository(db)
 		orderRepo = mysql.NewOrderRepository(db)
+		uow = mysql.NewUnitOfWork(db)
 	} else {
 		logger.Info().Msg("Using Mock persistence layer")
 		userRepo = mocks.NewMockUserRepository()
 		orderRepo = mocks.NewMockOrderRepository()
+		uow = mocks.NewMockUnitOfWork()
 	}
 
-	// Create application services
-	userService := userapp.NewApplicationService(userRepo, orderRepo, eventPublisher)
-	orderService := orderapp.NewApplicationService(orderRepo, userRepo, eventPublisher)
+	// Create application services with UoW for transaction management
+	userService := userapp.NewApplicationService(userRepo, orderRepo, uow)
+	orderService := orderapp.NewApplicationService(orderRepo, userRepo, uow)
 
 	// Create controllers (health check needs sql.DB for connection check)
 	var sqlDB interface{}

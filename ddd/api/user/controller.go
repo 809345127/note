@@ -26,7 +26,6 @@ func (c *Controller) RegisterRoutes(router *gin.RouterGroup) {
 	userGroup := router.Group("/users")
 	{
 		userGroup.POST("", c.CreateUser)
-		userGroup.GET("", c.GetAllUsers)
 		userGroup.GET("/:id", c.GetUser)
 		userGroup.PUT("/:id/status", c.UpdateUserStatus)
 		userGroup.GET("/:id/total-spent", c.GetUserTotalSpent)
@@ -65,17 +64,6 @@ func (c *Controller) GetUser(ctx *gin.Context) {
 	}
 
 	response.HandleSuccess(ctx, user, "User retrieved successfully")
-}
-
-// GetAllUsers Get all users
-func (c *Controller) GetAllUsers(ctx *gin.Context) {
-	users, err := c.userService.GetAllUsers()
-	if err != nil {
-		response.HandleError(ctx, err, "Failed to get users", http.StatusInternalServerError)
-		return
-	}
-
-	response.HandleSuccess(ctx, users, "Users retrieved successfully")
 }
 
 // UpdateUserStatusRequest Update user status request

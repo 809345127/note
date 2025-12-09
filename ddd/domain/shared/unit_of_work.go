@@ -4,101 +4,51 @@ import "context"
 
 // UnitOfWork Unit of Work Interface
 // DDD principles:
-// 1. Track changes to aggregate roots
-// 2. Manage transaction boundaries
-// 3. Coordinate repository save operations
+// 1. Manage transaction boundaries
+// 2. Track changes to aggregate roots
+// 3. Collect and persist domain events (Outbox pattern)
 // 4. Ensure aggregate consistency
 //
 // Usage pattern:
-// uow := unitOfWorkFactory.New()
 //
-//	err := uow.Execute(func() error {
-//	    // Load aggregate roots
-//	    user, _ := userRepo.FindByID(userID)
-//	    order, _ := orderRepo.FindByID(orderID)
+//	err := uow.Execute(ctx, func(ctx context.Context) error {
+//	    // Create or load aggregate roots
+//	    user, _ := userRepo.FindByID(ctx, userID)
 //
 //	    // Execute business operations
 //	    user.Deactivate()
-//	    order.Cancel()
 //
-//	    // Save (handled automatically during unit of work execution)
+//	    // Save aggregate root (uses transaction from ctx)
+//	    if err := userRepo.Save(ctx, user); err != nil {
+//	        return err
+//	    }
+//
+//	    // Register aggregate for event collection
 //	    uow.RegisterDirty(user)
-//	    uow.RegisterDirty(order)
-//
 //	    return nil
 //	})
 type UnitOfWork interface {
-	// Execute Execute business operations in transaction
-	// Automatically handles begin, commit and rollback
-	Execute(fn func() error) error
+	// Execute executes business operations in a transaction
+	// - Begins transaction and injects it into context
+	// - Executes the provided function
+	// - Collects events from registered aggregates
+	// - Saves events to outbox (if configured)
+	// - Commits on success, rolls back on error
+	Execute(ctx context.Context, fn func(ctx context.Context) error) error
 
-	// RegisterNew Register newly created aggregate root
+	// RegisterNew registers a newly created aggregate root for event collection
 	RegisterNew(aggregate AggregateRoot)
 
-	// RegisterDirty Register modified aggregate root
+	// RegisterDirty registers a modified aggregate root for event collection
 	RegisterDirty(aggregate AggregateRoot)
 
-	// RegisterClean Register clean aggregate root (unchanged)
-	RegisterClean(aggregate AggregateRoot)
-
-	// RegisterRemoved Register deleted aggregate root
+	// RegisterRemoved registers a deleted aggregate root for event collection
 	RegisterRemoved(aggregate AggregateRoot)
-}
-
-// UnitOfWorkFactory Unit of Work Factory
-type UnitOfWorkFactory interface {
-	// New Create new unit of work
-	New() UnitOfWork
-}
-
-// TransactionManager Transaction Manager Interface
-type TransactionManager interface {
-	// Begin Begin transaction
-	Begin() error
-
-	// Commit Commit transaction
-	Commit() error
-
-	// Rollback Rollback transaction
-	Rollback() error
-
-	// InTransaction Whether in transaction
-	InTransaction() bool
 }
 
 // OutboxRepository Outbox Repository Interface
 // Used to save domain events to outbox table, committed in the same transaction as business data
 type OutboxRepository interface {
-	// SaveEvent Save event to outbox table (in current transaction)
+	// SaveEvent saves event to outbox table (in current transaction)
 	SaveEvent(ctx context.Context, event DomainEvent) error
 }
-
-// IsolationLevel Transaction Isolation Level
-type IsolationLevel string
-
-const (
-	// ReadUncommitted Read Uncommitted
-	ReadUncommitted IsolationLevel = "READ_UNCOMMITTED"
-	// ReadCommitted Read Committed
-	ReadCommitted IsolationLevel = "READ_COMMITTED"
-	// RepeatableRead Repeatable Read
-	RepeatableRead IsolationLevel = "REPEATABLE_READ"
-	// Serializable Serializable (highest isolation level)
-	Serializable IsolationLevel = "SERIALIZABLE"
-)
-
-// ExecuteEvent Execute Event
-type ExecuteEvent struct {
-	Type       ExecuteEventType
-	Aggregates []AggregateRoot
-	Error      error
-}
-
-// ExecuteEventType Execute Event Type
-type ExecuteEventType string
-
-const (
-	EventBeforeCommit ExecuteEventType = "BEFORE_COMMIT"
-	EventAfterCommit  ExecuteEventType = "AFTER_COMMIT"
-	EventError        ExecuteEventType = "ERROR"
-)

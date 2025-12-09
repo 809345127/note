@@ -5,7 +5,10 @@
       "Bash(grep -r [u4e00-u9fff] --include=*.go /Users/shize/note/ddd)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(python3 -c:*)"
+      "Bash(python3 -c:*)",
+      "Bash(go build:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(timeout 5 go run:*)"
     ],
     "deny": [],
     "ask": []

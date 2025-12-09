@@ -24,18 +24,3 @@ type Repository interface {
 	// Remove Logically delete order aggregate root
 	Remove(ctx context.Context, id string) error
 }
-
-// QueryService Query service interface (Q-side in CQRS pattern)
-type QueryService interface {
-	// SearchOrders Search orders
-	SearchOrders(criteria SearchCriteria) ([]*Order, error)
-}
-
-// SearchCriteria Generic query criteria
-type SearchCriteria struct {
-	Filters   map[string]interface{}
-	SortBy    string
-	SortOrder string // ASC or DESC
-	Page      int
-	PageSize  int
-}

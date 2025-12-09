@@ -387,7 +387,7 @@ func (o *Order) UpdatedAt() time.Time      { return o.updatedAt }
 
 // PullEvents Get and clear aggregate root's event list
 // This is standard practice for domain event pattern:
-// 1. Aggregate root calls recordEvent() when state changes
+// 1. Aggregate root records events when state changes
 // 2. UoW calls PullEvents() in transaction to get events and save to outbox table
 // 3. PullEvents clears event list to avoid duplicate saves
 func (o *Order) PullEvents() []shared.DomainEvent {
@@ -395,11 +395,6 @@ func (o *Order) PullEvents() []shared.DomainEvent {
 	copy(events, o.events)
 	o.events = make([]shared.DomainEvent, 0)
 	return events
-}
-
-// recordEvent Record domain event
-func (o *Order) recordEvent(event shared.DomainEvent) {
-	o.events = append(o.events, event)
 }
 
 // OrderItem Getters - Allow reading but no external modification

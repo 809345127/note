@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )
 
@@ -220,51 +218,6 @@ func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 			return
 		}
 
-		c.Next()
-	}
-}
-
-// TimeoutMiddleware Timeout middleware
-func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
-		defer cancel()
-
-		c.Request = c.Request.WithContext(ctx)
-
-		// Use channel to monitor timeout
-		done := make(chan struct{})
-		go func() {
-			c.Next()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			requestID, _ := c.Get(response.RequestIDKey)
-			reqID, _ := requestID.(string)
-
-			logger.Warn().
-				Str("request_id", reqID).
-				Str("path", c.Request.URL.Path).
-				Msg("Request timeout")
-
-			c.AbortWithStatusJSON(http.StatusGatewayTimeout, response.Response{
-				Success:   false,
-				Error:     "request_timeout",
-				Message:   "Request timeout",
-				Code:      http.StatusGatewayTimeout,
-				RequestID: reqID,
-			})
-		}
-	}
-}
-
-// GinLogger Return zerolog adapter for Gin
-func GinLogger(log *zerolog.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
 		c.Next()
 	}
 }

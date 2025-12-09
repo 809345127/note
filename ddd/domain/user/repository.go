@@ -25,24 +25,3 @@ type Repository interface {
 	// Remove Logically delete user aggregate root (DDD recommends logical delete over physical delete)
 	Remove(ctx context.Context, id string) error
 }
-
-// QueryService Query service interface (Q-side in CQRS pattern)
-// DDD distinction: Command (modify) and Query (read) should be separated
-// Repository handles command operations (load aggregate root, save aggregate root)
-// Query service handles complex queries, not limited by aggregate boundaries
-type QueryService interface {
-	// SearchUsers Search users (supports pagination, sorting)
-	SearchUsers(criteria SearchCriteria) ([]*User, error)
-
-	// CountUsers Count users
-	CountUsers(criteria SearchCriteria) (int, error)
-}
-
-// SearchCriteria Generic search criteria
-type SearchCriteria struct {
-	Filters   map[string]interface{}
-	SortBy    string
-	SortOrder string // ASC or DESC
-	Page      int
-	PageSize  int
-}

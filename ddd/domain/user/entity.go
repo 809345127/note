@@ -127,10 +127,6 @@ func (u *User) PullEvents() []shared.DomainEvent {
 	return events
 }
 
-func (u *User) recordEvent(event shared.DomainEvent) {
-	u.events = append(u.events, event)
-}
-
 // ReconstructionDTO User reconstruction data transfer object
 // Limited to repository layer usage, for reconstructing User aggregate root from database
 // ⚠️ Note: This DTO should only be used in repository implementation, not called from application layer

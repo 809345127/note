@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // ErrorCode Error Code
@@ -187,28 +188,15 @@ func MapDomainError(err error) *AppError {
 		return UserNotActive()
 	default:
 		// Check if contains specific keywords
-		if contains(msg, "not found") {
+		if strings.Contains(msg, "not found") {
 			return NotFound(msg)
 		}
-		if contains(msg, "invalid") {
+		if strings.Contains(msg, "invalid") {
 			return BadRequest(msg)
 		}
-		if contains(msg, "already exists") {
+		if strings.Contains(msg, "already exists") {
 			return Conflict(msg)
 		}
 		return Wrap(err, CodeInternal, msg)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAny(s, substr))
-}
-
-func containsAny(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

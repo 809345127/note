@@ -36,9 +36,6 @@ type EventHandler interface {
 	Name() string
 }
 
-// EventHandlerFunc Functional Event Handler Type
-type EventHandlerFunc func(event DomainEvent) error
-
 // EventPublishOptions Event Publish Options
 type EventPublishOptions struct {
 	// Retry Number of retries on failure
@@ -304,16 +301,4 @@ func (h *LoggingEventHandler) Handle(event DomainEvent) error {
 // Name Return handler name
 func (h *LoggingEventHandler) Name() string {
 	return "logging-event-handler"
-}
-
-// EventPublishAdapter Adapter Pattern: Convert DomainEventPublisher to specific event publisher
-type EventPublishAdapter struct {
-	publisher DomainEventPublisher
-}
-
-// NewEventPublishAdapter Create Adapter
-func NewEventPublishAdapter(publisher DomainEventPublisher) *EventPublishAdapter {
-	return &EventPublishAdapter{
-		publisher: publisher,
-	}
 }

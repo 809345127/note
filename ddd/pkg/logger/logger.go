@@ -106,8 +106,3 @@ func Fatal() *zerolog.Event {
 func WithRequestID(requestID string) zerolog.Logger {
 	return log.With().Str("request_id", requestID).Logger()
 }
-
-// WithField Add field
-func WithField(key string, value interface{}) zerolog.Logger {
-	return log.With().Interface(key, value).Logger()
-}

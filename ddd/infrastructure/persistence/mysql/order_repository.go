@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"ddd-example/domain/order"
-	"ddd-example/infrastructure/persistence"
-	"ddd-example/infrastructure/persistence/mysql/po"
+	"ddd/domain/order"
+	"ddd/domain/shared"
+	"ddd/infrastructure/persistence"
+	"ddd/infrastructure/persistence/mysql/po"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -41,40 +42,85 @@ func (r *OrderRepository) NextIdentity() string {
 // Note: Manually manage saving of orders and order items, do not use GORM associations
 // When called within UoW.Execute(), it uses the transaction from context
 // When called standalone, it creates its own transaction for atomicity
+// Uses dirty tracking for efficient updates and optimistic locking for concurrency control
 func (r *OrderRepository) Save(ctx context.Context, o *order.Order) error {
-	orderPO, itemPOs := po.FromOrderDomain(o)
-
 	// Check if we're already in a UoW transaction
 	if tx := persistence.TxFromContext(ctx); tx != nil {
 		// Use the existing transaction from UoW
-		return r.saveWithTx(tx, o.ID(), orderPO, itemPOs)
+		return r.saveWithTx(tx, o)
 	}
 
 	// No UoW transaction - create our own for atomicity
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return r.saveWithTx(tx, o.ID(), orderPO, itemPOs)
+		return r.saveWithTx(tx, o)
 	})
 }
 
 // saveWithTx performs the actual save operations within a transaction
-func (r *OrderRepository) saveWithTx(tx *gorm.DB, orderID string, orderPO *po.OrderPO, itemPOs []po.OrderItemPO) error {
-	// Save order
-	if err := tx.Save(orderPO).Error; err != nil {
-		return err
-	}
+// Uses dirty tracking: only inserts new items and deletes removed items
+// Uses optimistic locking: checks version to prevent concurrent modification
+func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
+	orderPO, allItemPOs := po.FromOrderDomain(o)
 
-	// Delete old order items (simple strategy: delete then insert)
-	if err := tx.Where("order_id = ?", orderID).Delete(&po.OrderItemPO{}).Error; err != nil {
-		return err
-	}
-
-	// Save new order items
-	if len(itemPOs) > 0 {
-		if err := tx.Create(&itemPOs).Error; err != nil {
+	if o.IsNew() {
+		// New aggregate: insert order and all items
+		if err := tx.Create(orderPO).Error; err != nil {
 			return err
+		}
+		if len(allItemPOs) > 0 {
+			if err := tx.Create(&allItemPOs).Error; err != nil {
+				return err
+			}
+		}
+	} else {
+		// Existing aggregate: use optimistic locking and dirty tracking
+
+		// 1. Update order with optimistic lock check
+		result := tx.Model(&po.OrderPO{}).
+			Where("id = ? AND version = ?", o.ID(), o.Version()).
+			Updates(map[string]interface{}{
+				"status":         orderPO.Status,
+				"total_amount":   orderPO.TotalAmount,
+				"total_currency": orderPO.TotalCurrency,
+				"version":        o.Version() + 1,
+				"updated_at":     orderPO.UpdatedAt,
+			})
+
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return order.ErrConcurrentModification
+		}
+
+		// 2. Delete removed items (dirty tracking)
+		for _, item := range o.RemovedItems() {
+			if err := tx.Delete(&po.OrderItemPO{}, "id = ?", item.ID()).Error; err != nil {
+				return err
+			}
+		}
+
+		// 3. Insert added items (dirty tracking)
+		for _, item := range o.AddedItems() {
+			itemPO := po.OrderItemPO{
+				ID:               o.ID() + "-" + item.ProductID(),
+				OrderID:          o.ID(),
+				ProductID:        item.ProductID(),
+				ProductName:      item.ProductName(),
+				Quantity:         item.Quantity(),
+				UnitPrice:        item.UnitPrice().Amount(),
+				UnitCurrency:     item.UnitPrice().Currency(),
+				Subtotal:         item.Subtotal().Amount(),
+				SubtotalCurrency: item.Subtotal().Currency(),
+			}
+			if err := tx.Create(&itemPO).Error; err != nil {
+				return err
+			}
 		}
 	}
 
+	// Clear dirty tracking after successful save
+	o.ClearDirtyTracking()
 	return nil
 }
 
@@ -103,13 +149,33 @@ func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order
 
 // FindByUserID Find order list by user ID
 func (r *OrderRepository) FindByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
-	db := r.getDB(ctx)
-	var orderPOs []po.OrderPO
+	spec := order.ByUserIDSpecification{UserID: userID}
+	return r.FindBySpecification(ctx, spec)
+}
 
-	// Query orders
-	if err := db.Where("user_id = ?", userID).
-		Order("created_at DESC").
-		Find(&orderPOs).Error; err != nil {
+// FindDeliveredOrdersByUserID Find delivered orders by user ID
+func (r *OrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
+	spec := shared.And(
+		order.ByUserIDSpecification{UserID: userID},
+		order.ByStatusSpecification{Status: order.StatusDelivered},
+	)
+	return r.FindBySpecification(ctx, spec)
+}
+
+// FindBySpecification Find orders by specification
+// Implements the domain.Repository interface for flexible query composition
+func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*order.Order, error) {
+	db := r.getDB(ctx)
+
+	// Apply specification to query
+	db = r.applySpecification(db, spec)
+	if db.Error != nil {
+		return nil, db.Error
+	}
+
+	// Execute query with ordering
+	var orderPOs []po.OrderPO
+	if err := db.Order("created_at DESC").Find(&orderPOs).Error; err != nil {
 		return nil, err
 	}
 
@@ -126,29 +192,44 @@ func (r *OrderRepository) FindByUserID(ctx context.Context, userID string) ([]*o
 	return orders, nil
 }
 
-// FindDeliveredOrdersByUserID Find delivered orders by user ID
-func (r *OrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
-	db := r.getDB(ctx)
-	var orderPOs []po.OrderPO
-
-	// Query delivered orders
-	if err := db.Where("user_id = ? AND status = ?", userID, string(order.StatusDelivered)).
-		Order("created_at DESC").
-		Find(&orderPOs).Error; err != nil {
-		return nil, err
+// applySpecification applies a domain specification to a GORM query
+// Uses type switches to handle different specification types
+func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+	if spec == nil {
+		return db
 	}
 
-	// Batch query order items
-	orders := make([]*order.Order, len(orderPOs))
-	for i, orderPO := range orderPOs {
-		var itemPOs []po.OrderItemPO
-		if err := db.Where("order_id = ?", orderPO.ID).Find(&itemPOs).Error; err != nil {
-			return nil, err
+	// Handle composite specifications
+	switch s := spec.(type) {
+	case shared.AndSpecification:
+		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
+	// Note: OR and NOT specifications are more complex to implement with GORM
+	// For simplicity in this first implementation, we only support AND
+	default:
+		return r.applyConcreteSpecification(db, spec)
+	}
+}
+
+// applyConcreteSpecification applies concrete domain specifications
+func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+	switch s := spec.(type) {
+	case order.ByUserIDSpecification:
+		return db.Where("user_id = ?", s.UserID)
+	case order.ByStatusSpecification:
+		return db.Where("status = ?", s.Status)
+	case order.ByDateRangeSpecification:
+		// Handle optional start and end dates
+		if !s.Start.IsZero() {
+			db = db.Where("created_at >= ?", s.Start)
 		}
-		orders[i] = orderPO.ToDomain(itemPOs)
+		if !s.End.IsZero() {
+			db = db.Where("created_at <= ?", s.End)
+		}
+		return db
+	default:
+		// Unknown specification type - return unchanged
+		return db
 	}
-
-	return orders, nil
 }
 
 // Remove Delete order (logical deletion: mark as cancelled)

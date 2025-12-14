@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"ddd-example/api/response"
-	"ddd-example/config"
-	"ddd-example/pkg/logger"
+	"ddd/api/response"
+	"ddd/config"
+	"ddd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

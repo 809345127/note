@@ -1,11 +1,11 @@
 package api
 
 import (
-	"ddd-example/api/health"
-	"ddd-example/api/middleware"
-	"ddd-example/api/order"
-	"ddd-example/api/user"
-	"ddd-example/config"
+	"ddd/api/health"
+	"ddd/api/middleware"
+	"ddd/api/order"
+	"ddd/api/user"
+	"ddd/config"
 
 	"github.com/gin-gonic/gin"
 )

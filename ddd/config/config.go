@@ -51,6 +51,20 @@ type DatabaseConfig struct {
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+	Retry           RetryConfig   `mapstructure:"retry"`
+}
+
+// RetryConfig Retry configuration for optimistic concurrency control
+type RetryConfig struct {
+	Enabled                       bool          `mapstructure:"enabled"`
+	MaxAttempts                   int           `mapstructure:"max_attempts"`
+	InitialDelay                  time.Duration `mapstructure:"initial_delay"`
+	MaxDelay                      time.Duration `mapstructure:"max_delay"`
+	BackoffFactor                 float64       `mapstructure:"backoff_factor"`
+	JitterEnabled                 bool          `mapstructure:"jitter_enabled"`
+	RetryOnConcurrentModification bool          `mapstructure:"retry_on_concurrent_modification"`
+	RetryOnDeadlock               bool          `mapstructure:"retry_on_deadlock"`
+	RetryOnLockTimeout            bool          `mapstructure:"retry_on_lock_timeout"`
 }
 
 // LogConfig Log Configuration
@@ -121,7 +135,7 @@ func Load(configPath string) (*Config, error) {
 // setDefaults Set default configuration
 func setDefaults(v *viper.Viper) {
 	// App
-	v.SetDefault("app.name", "ddd-example")
+	v.SetDefault("app.name", "ddd")
 	v.SetDefault("app.version", "1.0.0")
 	v.SetDefault("app.env", "development")
 
@@ -144,6 +158,17 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_open_conns", 25)
 	v.SetDefault("database.max_idle_conns", 5)
 	v.SetDefault("database.conn_max_lifetime", "5m")
+
+	// Retry configuration defaults
+	v.SetDefault("database.retry.enabled", true)
+	v.SetDefault("database.retry.max_attempts", 3)
+	v.SetDefault("database.retry.initial_delay", "100ms")
+	v.SetDefault("database.retry.max_delay", "2s")
+	v.SetDefault("database.retry.backoff_factor", 2.0)
+	v.SetDefault("database.retry.jitter_enabled", true)
+	v.SetDefault("database.retry.retry_on_concurrent_modification", true)
+	v.SetDefault("database.retry.retry_on_deadlock", true)
+	v.SetDefault("database.retry.retry_on_lock_timeout", true)
 
 	// Log
 	v.SetDefault("log.level", "info")

@@ -1,6 +1,10 @@
 package user
 
-import "context"
+import (
+	"context"
+
+	"ddd/domain/shared"
+)
 
 // Repository User repository interface
 // DDD principles:
@@ -21,6 +25,10 @@ type Repository interface {
 
 	// FindByEmail Find user by email (business uniqueness constraint)
 	FindByEmail(ctx context.Context, email string) (*User, error)
+
+	// FindBySpecification Find users by specification
+	// Allows flexible query composition without repository method explosion
+	FindBySpecification(ctx context.Context, spec shared.Specification) ([]*User, error)
 
 	// Remove Logically delete user aggregate root (DDD recommends logical delete over physical delete)
 	Remove(ctx context.Context, id string) error

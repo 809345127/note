@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"time"
 
-	"ddd-example/config"
+	"ddd/config"
 
 	"github.com/gin-gonic/gin"
 )

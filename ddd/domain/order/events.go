@@ -3,7 +3,7 @@ package order
 import (
 	"time"
 
-	"ddd-example/domain/shared"
+	"ddd/domain/shared"
 )
 
 // OrderPlacedEvent Order placed event

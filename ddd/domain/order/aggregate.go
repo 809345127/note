@@ -20,7 +20,7 @@ import (
 	"errors"
 	"time"
 
-	"ddd-example/domain/shared"
+	"ddd/domain/shared"
 
 	"github.com/google/uuid"
 )
@@ -40,6 +40,12 @@ type Order struct {
 
 	// Domain event list for recording events within the aggregate
 	events []shared.DomainEvent
+
+	// Dirty tracking for efficient persistence
+	// These track changes since the aggregate was loaded/created
+	addedItems   []OrderItem // Items added since load
+	removedItems []OrderItem // Items removed since load
+	isNew        bool        // True if this aggregate was newly created (not loaded from DB)
 }
 
 // OrderItem Order item - Entity within the aggregate (non-aggregate root)
@@ -137,6 +143,10 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		createdAt:   now,
 		updatedAt:   now,
 		events:      make([]shared.DomainEvent, 0),
+		// Dirty tracking: new aggregate has no changes to track yet
+		addedItems:   nil,
+		removedItems: nil,
+		isNew:        true, // Mark as newly created
 	}
 
 	// Record domain event
@@ -239,6 +249,12 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 
 	o.items = append(o.items, item)
 
+	// Track addition for dirty tracking (only if not a new aggregate)
+	// New aggregates will insert all items anyway, no need to track
+	if !o.isNew {
+		o.addedItems = append(o.addedItems, item)
+	}
+
 	// Recalculate total amount
 	newTotal := shared.NewMoney(0, "CNY")
 	var err error
@@ -247,6 +263,9 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 		if err != nil {
 			// Rollback add operation
 			o.items = o.items[:len(o.items)-1]
+			if !o.isNew {
+				o.addedItems = o.addedItems[:len(o.addedItems)-1]
+			}
 			return err
 		}
 	}
@@ -264,8 +283,10 @@ func (o *Order) RemoveItem(itemID string) error {
 
 	// Find and delete order item
 	found := false
+	var removedItem OrderItem
 	for i, item := range o.items {
 		if item.id == itemID {
+			removedItem = item
 			// Remove element from slice
 			o.items = append(o.items[:i], o.items[i+1:]...)
 			found = true
@@ -275,6 +296,26 @@ func (o *Order) RemoveItem(itemID string) error {
 
 	if !found {
 		return errors.New("item not found")
+	}
+
+	// Track removal for dirty tracking (only if not a new aggregate)
+	// For new aggregates, item was never persisted, so no need to track removal
+	// Also check if the item was in addedItems (added then removed in same session)
+	if !o.isNew {
+		// Check if this item was added in current session
+		wasAddedInSession := false
+		for i, added := range o.addedItems {
+			if added.id == itemID {
+				// Remove from addedItems instead of tracking as removed
+				o.addedItems = append(o.addedItems[:i], o.addedItems[i+1:]...)
+				wasAddedInSession = true
+				break
+			}
+		}
+		// Only track as removed if it was originally loaded from DB
+		if !wasAddedInSession {
+			o.removedItems = append(o.removedItems, removedItem)
+		}
 	}
 
 	// Recalculate total amount
@@ -377,6 +418,42 @@ func (o *Order) Status() Status            { return o.status }
 func (o *Order) Version() int              { return o.version }
 func (o *Order) CreatedAt() time.Time      { return o.createdAt }
 func (o *Order) UpdatedAt() time.Time      { return o.updatedAt }
+
+// ============================================================================
+// Dirty Tracking - For Repository Layer Use Only
+// ============================================================================
+//
+// DDD Principle: Aggregate tracks its own changes for efficient persistence
+// Repository uses these methods to determine what needs to be inserted/deleted
+// ⚠️ Note: These methods should only be used in repository implementation
+
+// IsNew Returns true if this aggregate was newly created (not loaded from DB)
+// Repository uses this to decide between INSERT ALL vs UPDATE with dirty tracking
+func (o *Order) IsNew() bool { return o.isNew }
+
+// AddedItems Returns items added since the aggregate was loaded
+// Repository should INSERT these items
+func (o *Order) AddedItems() []OrderItem {
+	items := make([]OrderItem, len(o.addedItems))
+	copy(items, o.addedItems)
+	return items
+}
+
+// RemovedItems Returns items removed since the aggregate was loaded
+// Repository should DELETE these items
+func (o *Order) RemovedItems() []OrderItem {
+	items := make([]OrderItem, len(o.removedItems))
+	copy(items, o.removedItems)
+	return items
+}
+
+// ClearDirtyTracking Clears all dirty tracking state after successful save
+// Repository should call this after persisting changes successfully
+func (o *Order) ClearDirtyTracking() {
+	o.addedItems = nil
+	o.removedItems = nil
+	o.isNew = false
+}
 
 // ============================================================================
 // Domain Event Management

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"ddd-example/domain/order"
-	"ddd-example/domain/shared"
-	"ddd-example/domain/user"
+	"ddd/domain/order"
+	"ddd/domain/shared"
+	"ddd/domain/user"
 )
 
 // ApplicationService User application service - coordinates user-related business processes

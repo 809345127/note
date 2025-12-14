@@ -3,8 +3,8 @@ package user
 import (
 	"net/http"
 
-	"ddd-example/api/response"
-	userapp "ddd-example/application/user"
+	"ddd/api/response"
+	userapp "ddd/application/user"
 
 	"github.com/gin-gonic/gin"
 )

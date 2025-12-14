@@ -3,8 +3,8 @@ package order
 import (
 	"net/http"
 
-	"ddd-example/api/response"
-	orderapp "ddd-example/application/order"
+	"ddd/api/response"
+	orderapp "ddd/application/order"
 
 	"github.com/gin-gonic/gin"
 )

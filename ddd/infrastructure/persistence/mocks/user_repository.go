@@ -5,7 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"ddd-example/domain/user"
+	"ddd/domain/shared"
+	"ddd/domain/user"
 
 	"github.com/google/uuid"
 )
@@ -75,15 +76,28 @@ func (r *MockUserRepository) FindByID(ctx context.Context, id string) (*user.Use
 }
 
 func (r *MockUserRepository) FindByEmail(ctx context.Context, email string) (*user.User, error) {
+	spec := user.ByEmailSpecification{Email: email}
+	users, err := r.FindBySpecification(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, errors.New("user not found")
+	}
+	return users[0], nil
+}
+
+func (r *MockUserRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	var users []*user.User
 	for _, u := range r.users {
-		if u.Email().Value() == email {
-			return u, nil
+		if spec.IsSatisfiedBy(ctx, u) {
+			users = append(users, u)
 		}
 	}
-	return nil, errors.New("user not found")
+	return users, nil
 }
 
 // Remove Logical deletion of user (DDD recommended practice)

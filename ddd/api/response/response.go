@@ -3,7 +3,7 @@ package response
 import (
 	"net/http"
 
-	"ddd-example/pkg/errors"
+	"ddd/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 )

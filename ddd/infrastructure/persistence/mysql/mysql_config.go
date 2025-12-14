@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"ddd-example/infrastructure/persistence/mysql/po"
-	"ddd-example/pkg/logger"
+	"ddd/infrastructure/persistence/mysql/po"
+	"ddd/pkg/logger"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -79,6 +79,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&po.UserPO{},
 		&po.OrderPO{},
 		&po.OrderItemPO{},
+		&po.OutboxEventPO{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

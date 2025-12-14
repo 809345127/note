@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"ddd-example/cmd"
-	"ddd-example/config"
+	"ddd/cmd"
+	"ddd/config"
 )
 
 func main() {

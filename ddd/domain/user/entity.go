@@ -3,7 +3,7 @@ package user
 import (
 	"time"
 
-	"ddd-example/domain/shared"
+	"ddd/domain/shared"
 
 	"github.com/google/uuid"
 )
@@ -25,6 +25,7 @@ type User struct {
 	version   int // Optimistic lock version number
 	createdAt time.Time
 	updatedAt time.Time
+	isNew     bool // Tracks if aggregate is newly created (not loaded from DB)
 
 	events []shared.DomainEvent
 }
@@ -54,6 +55,7 @@ func NewUser(name string, email string, age int) (*User, error) {
 		version:   0,
 		createdAt: now,
 		updatedAt: now,
+		isNew:     true,
 		events:    make([]shared.DomainEvent, 0),
 	}
 
@@ -118,6 +120,8 @@ func (u *User) IsActive() bool       { return u.isActive }
 func (u *User) Version() int         { return u.version }
 func (u *User) CreatedAt() time.Time { return u.createdAt }
 func (u *User) UpdatedAt() time.Time { return u.updatedAt }
+func (u *User) IsNew() bool          { return u.isNew }
+func (u *User) ClearNewFlag()        { u.isNew = false }
 
 // PullEvents Get and clear aggregate root's event list
 func (u *User) PullEvents() []shared.DomainEvent {
@@ -154,6 +158,7 @@ func RebuildFromDTO(dto ReconstructionDTO) *User {
 		version:   dto.Version,
 		createdAt: dto.CreatedAt,
 		updatedAt: dto.UpdatedAt,
+		isNew:     false,
 		events:    []shared.DomainEvent{},
 	}
 }

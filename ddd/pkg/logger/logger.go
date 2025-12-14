@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"ddd-example/config"
+	"ddd/config"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/pkgerrors"

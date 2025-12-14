@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"ddd-example/domain/shared"
+	"ddd/domain/shared"
 )
 
 // MockEventPublisher Mock implementation of domain event publisher

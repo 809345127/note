@@ -8,7 +8,14 @@
       "Bash(python3 -c:*)",
       "Bash(go build:*)",
       "Bash(go mod tidy:*)",
-      "Bash(timeout 5 go run:*)"
+      "Bash(timeout 5 go run:*)",
+      "Bash(go test:*)",
+      "WebSearch",
+      "Bash(xargs:*)",
+      "Bash(timeout 5 go build:*)",
+      "Bash(timeout 10 go build:*)",
+      "Bash(timeout 30 go build:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

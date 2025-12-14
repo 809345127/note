@@ -3,7 +3,7 @@ package po
 import (
 	"time"
 
-	"ddd-example/domain/user"
+	"ddd/domain/user"
 )
 
 // UserPO User persistence object

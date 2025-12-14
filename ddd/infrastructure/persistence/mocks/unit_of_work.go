@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"ddd-example/domain/shared"
+	"ddd/domain/shared"
 )
 
 // MockUnitOfWork is a mock implementation of UnitOfWork for testing

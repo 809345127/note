@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"ddd-example/domain/order"
-	"ddd-example/domain/shared"
+	"ddd/domain/order"
+	"ddd/domain/shared"
 
 	"github.com/google/uuid"
 )
@@ -110,7 +110,18 @@ func (r *MockOrderRepository) Save(ctx context.Context, o *order.Order) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Check optimistic locking for existing orders
+	if !o.IsNew() {
+		existing, exists := r.orders[o.ID()]
+		if exists && existing.Version() != o.Version() {
+			return order.ErrConcurrentModification
+		}
+	}
+
 	r.orders[o.ID()] = o
+
+	// Clear dirty tracking after successful save
+	o.ClearDirtyTracking()
 
 	// Note: Do not publish events in repository!
 	// Events are saved to outbox table by UoW before transaction commit
@@ -131,25 +142,25 @@ func (r *MockOrderRepository) FindByID(ctx context.Context, id string) (*order.O
 }
 
 func (r *MockOrderRepository) FindByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var orders []*order.Order
-	for _, o := range r.orders {
-		if o.UserID() == userID {
-			orders = append(orders, o)
-		}
-	}
-	return orders, nil
+	spec := order.ByUserIDSpecification{UserID: userID}
+	return r.FindBySpecification(ctx, spec)
 }
 
 func (r *MockOrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
+	spec := shared.And(
+		order.ByUserIDSpecification{UserID: userID},
+		order.ByStatusSpecification{Status: order.StatusDelivered},
+	)
+	return r.FindBySpecification(ctx, spec)
+}
+
+func (r *MockOrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*order.Order, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var orders []*order.Order
 	for _, o := range r.orders {
-		if o.UserID() == userID && o.Status() == order.StatusDelivered {
+		if spec.IsSatisfiedBy(ctx, o) {
 			orders = append(orders, o)
 		}
 	}

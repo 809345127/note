@@ -3,8 +3,8 @@ package po
 import (
 	"time"
 
-	"ddd-example/domain/order"
-	"ddd-example/domain/shared"
+	"ddd/domain/order"
+	"ddd/domain/shared"
 )
 
 // OrderPO Order persistence object

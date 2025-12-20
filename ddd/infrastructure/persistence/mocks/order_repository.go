@@ -154,7 +154,7 @@ func (r *MockOrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, u
 	return r.FindBySpecification(ctx, spec)
 }
 
-func (r *MockOrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*order.Order, error) {
+func (r *MockOrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification[*order.Order]) ([]*order.Order, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

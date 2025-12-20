@@ -12,12 +12,8 @@ type ByEmailSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the user has the specified email
-func (spec ByEmailSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	user, ok := entity.(*User)
-	if !ok {
-		return false
-	}
-	return user.Email().Value() == spec.Email
+func (spec ByEmailSpecification) IsSatisfiedBy(ctx context.Context, entity *User) bool {
+	return entity.Email().Value() == spec.Email
 }
 
 // ByStatusSpecification filters users by active/inactive status
@@ -26,12 +22,8 @@ type ByStatusSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the user's active status matches
-func (spec ByStatusSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	user, ok := entity.(*User)
-	if !ok {
-		return false
-	}
-	return user.IsActive() == spec.Active
+func (spec ByStatusSpecification) IsSatisfiedBy(ctx context.Context, entity *User) bool {
+	return entity.IsActive() == spec.Active
 }
 
 // ByAgeRangeSpecification filters users by age range
@@ -42,12 +34,8 @@ type ByAgeRangeSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the user's age is within the range
-func (spec ByAgeRangeSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	user, ok := entity.(*User)
-	if !ok {
-		return false
-	}
-	age := user.Age()
+func (spec ByAgeRangeSpecification) IsSatisfiedBy(ctx context.Context, entity *User) bool {
+	age := entity.Age()
 
 	// Check minimum age (if specified)
 	if spec.Min > 0 && age < spec.Min {
@@ -65,16 +53,16 @@ func (spec ByAgeRangeSpecification) IsSatisfiedBy(ctx context.Context, entity in
 // Helper functions for common specifications
 
 // NewByEmailSpecification creates a specification to filter by email
-func NewByEmailSpecification(email string) shared.Specification {
+func NewByEmailSpecification(email string) shared.Specification[*User] {
 	return ByEmailSpecification{Email: email}
 }
 
 // NewByStatusSpecification creates a specification to filter by active status
-func NewByStatusSpecification(active bool) shared.Specification {
+func NewByStatusSpecification(active bool) shared.Specification[*User] {
 	return ByStatusSpecification{Active: active}
 }
 
 // NewByAgeRangeSpecification creates a specification to filter by age range
-func NewByAgeRangeSpecification(min, max int) shared.Specification {
+func NewByAgeRangeSpecification(min, max int) shared.Specification[*User] {
 	return ByAgeRangeSpecification{Min: min, Max: max}
 }

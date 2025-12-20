@@ -15,7 +15,9 @@
       "Bash(timeout 5 go build:*)",
       "Bash(timeout 10 go build:*)",
       "Bash(timeout 30 go build:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(go vet:*)"
     ],
     "deny": [],
     "ask": []

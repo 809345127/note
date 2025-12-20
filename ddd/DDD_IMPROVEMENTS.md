@@ -148,10 +148,11 @@ The project already implements solid DDD patterns:
 
 **Implemented Components:**
 
-1. **`Specification` Interface** (`domain/shared/specification.go`)
-   - Core interface with `IsSatisfiedBy(ctx context.Context, entity interface{}) bool` method
-   - Composite specifications: `AndSpecification`, `OrSpecification`, `NotSpecification`
+1. **`Specification[T]` Interface** (`domain/shared/specification.go`)
+   - Generic interface with `IsSatisfiedBy(ctx context.Context, entity T) bool` method
+   - Composite specifications: `AndSpecification[T]`, `OrSpecification[T]`, `NotSpecification[T]`
    - Follows strict DDD principle: domain layer has no framework dependencies
+   - Type-safe query criteria with compile-time entity type checking
 
 2. **Concrete Domain Specifications**:
    - **Order Domain** (`domain/order/specifications.go`):
@@ -164,9 +165,10 @@ The project already implements solid DDD patterns:
      - `ByAgeRangeSpecification`: Filters users by age range (optional min/max)
 
 3. **Updated Repository Interfaces**:
-   - `domain/order/repository.go`: Added `FindBySpecification(ctx context.Context, spec shared.Specification) ([]*Order, error)`
-   - `domain/user/repository.go`: Added `FindBySpecification(ctx context.Context, spec shared.Specification) ([]*User, error)`
+   - `domain/order/repository.go`: Added `FindBySpecification(ctx context.Context, spec shared.Specification[*Order]) ([]*Order, error)`
+   - `domain/user/repository.go`: Added `FindBySpecification(ctx context.Context, spec shared.Specification[*User]) ([]*User, error)`
    - Maintained backward compatibility (existing methods unchanged)
+   - Type-safe specification parameters for compile-time validation
 
 4. **Infrastructure Implementation**:
    - **MySQL Repositories** (`infrastructure/persistence/mysql/`):
@@ -179,17 +181,18 @@ The project already implements solid DDD patterns:
    - **Mock Repositories** (`infrastructure/persistence/mocks/`):
      - `order_repository.go`: Implements `FindBySpecification()` with in-memory filtering using `IsSatisfiedBy()`
      - `user_repository.go`: Same pattern for mock implementation
-   - **Specification Translator** (`infrastructure/persistence/specification/translator.go`):
-     - `Translator` interface for converting domain specifications to GORM queries
-     - `GormTranslator` implementation with type switches for concrete specifications
-     - Supports composite `AndSpecification` and concrete domain specifications
+   - **Repository-based Specification Application**:
+     - Each repository implements its own `applySpecification()` logic
+     - No separate translator abstraction needed
+     - Direct mapping from domain specifications to GORM WHERE clauses
 
 5. **Domain Helper Functions**:
-   - `shared.And(left, right Specification) Specification`: Creates AND composite
-   - `NewByEmailSpecification(email string)`, etc.: Convenience constructors
+   - `shared.And[T any](left, right Specification[T]) Specification[T]`: Creates type-safe AND composite
+   - `user.NewByEmailSpecification(email string) shared.Specification[*user.User]`, etc.: Type-safe convenience constructors
 
 **Key Design Decisions:**
-- **Domain-Only Interface**: `Specification` interface stays in domain layer with no GORM dependencies
+- **Domain-Only Interface**: `Specification[T]` generic interface stays in domain layer with no GORM dependencies
+- **Type Safety**: Generic type parameters ensure compile-time validation of entity types
 - **Dual Implementation**: Both MySQL (database queries) and Mock (in-memory filtering) support specifications
 - **Gradual Adoption**: Existing repository methods refactored to use specifications internally while maintaining same public API
 - **Composition Support**: `AndSpecification` implemented, `OrSpecification` and `NotSpecification` stubbed for future extension
@@ -271,11 +274,12 @@ users, err := repo.FindBySpecification(ctx, activeUsersSpec)
 
 ---
 
-*Last Updated: 2025-12-14*
+*Last Updated: 2025-12-20*
 
 **Implementation Status: Phase 3 Complete**
 - ✅ Outbox Pattern: Events persisted atomically with business data
 - ✅ Retry Mechanism: Automatic retry with exponential backoff for optimistic concurrency
 - ✅ Consistent optimistic locking across User and Order repositories
 - ✅ Specification Pattern: Reusable query criteria with composition support
+- ✅ Type-safe generic interface with compile-time entity validation
 - ✅ Configurable retry behavior via application configuration

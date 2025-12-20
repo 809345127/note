@@ -87,7 +87,7 @@ func (r *MockUserRepository) FindByEmail(ctx context.Context, email string) (*us
 	return users[0], nil
 }
 
-func (r *MockUserRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*user.User, error) {
+func (r *MockUserRepository) FindBySpecification(ctx context.Context, spec shared.Specification[*user.User]) ([]*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

@@ -28,7 +28,7 @@ type Repository interface {
 
 	// FindBySpecification Find users by specification
 	// Allows flexible query composition without repository method explosion
-	FindBySpecification(ctx context.Context, spec shared.Specification) ([]*User, error)
+	FindBySpecification(ctx context.Context, spec shared.Specification[*User]) ([]*User, error)
 
 	// Remove Logically delete user aggregate root (DDD recommends logical delete over physical delete)
 	Remove(ctx context.Context, id string) error

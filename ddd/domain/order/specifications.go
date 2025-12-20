@@ -13,12 +13,8 @@ type ByUserIDSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the order belongs to the specified user
-func (spec ByUserIDSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	order, ok := entity.(*Order)
-	if !ok {
-		return false
-	}
-	return order.UserID() == spec.UserID
+func (spec ByUserIDSpecification) IsSatisfiedBy(ctx context.Context, entity *Order) bool {
+	return entity.UserID() == spec.UserID
 }
 
 // ByStatusSpecification filters orders by status
@@ -27,12 +23,8 @@ type ByStatusSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the order has the specified status
-func (spec ByStatusSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	order, ok := entity.(*Order)
-	if !ok {
-		return false
-	}
-	return order.Status() == spec.Status
+func (spec ByStatusSpecification) IsSatisfiedBy(ctx context.Context, entity *Order) bool {
+	return entity.Status() == spec.Status
 }
 
 // ByDateRangeSpecification filters orders by creation date range
@@ -43,12 +35,8 @@ type ByDateRangeSpecification struct {
 }
 
 // IsSatisfiedBy returns true if the order was created within the date range
-func (spec ByDateRangeSpecification) IsSatisfiedBy(ctx context.Context, entity interface{}) bool {
-	order, ok := entity.(*Order)
-	if !ok {
-		return false
-	}
-	createdAt := order.CreatedAt()
+func (spec ByDateRangeSpecification) IsSatisfiedBy(ctx context.Context, entity *Order) bool {
+	createdAt := entity.CreatedAt()
 
 	// Check start date (if specified)
 	if !spec.Start.IsZero() && createdAt.Before(spec.Start) {
@@ -66,16 +54,16 @@ func (spec ByDateRangeSpecification) IsSatisfiedBy(ctx context.Context, entity i
 // Helper functions for common specifications
 
 // NewByUserIDSpecification creates a specification to filter by user ID
-func NewByUserIDSpecification(userID string) shared.Specification {
+func NewByUserIDSpecification(userID string) shared.Specification[*Order] {
 	return ByUserIDSpecification{UserID: userID}
 }
 
 // NewByStatusSpecification creates a specification to filter by status
-func NewByStatusSpecification(status Status) shared.Specification {
+func NewByStatusSpecification(status Status) shared.Specification[*Order] {
 	return ByStatusSpecification{Status: status}
 }
 
 // NewByDateRangeSpecification creates a specification to filter by date range
-func NewByDateRangeSpecification(start, end time.Time) shared.Specification {
+func NewByDateRangeSpecification(start, end time.Time) shared.Specification[*Order] {
 	return ByDateRangeSpecification{Start: start, End: end}
 }

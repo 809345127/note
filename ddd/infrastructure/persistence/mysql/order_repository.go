@@ -164,7 +164,7 @@ func (r *OrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userI
 
 // FindBySpecification Find orders by specification
 // Implements the domain.Repository interface for flexible query composition
-func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*order.Order, error) {
+func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification[*order.Order]) ([]*order.Order, error) {
 	db := r.getDB(ctx)
 
 	// Apply specification to query
@@ -194,14 +194,14 @@ func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.S
 
 // applySpecification applies a domain specification to a GORM query
 // Uses type switches to handle different specification types
-func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	if spec == nil {
 		return db
 	}
 
 	// Handle composite specifications
 	switch s := spec.(type) {
-	case shared.AndSpecification:
+	case shared.AndSpecification[*order.Order]:
 		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
 	// Note: OR and NOT specifications are more complex to implement with GORM
 	// For simplicity in this first implementation, we only support AND
@@ -211,7 +211,7 @@ func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specificat
 }
 
 // applyConcreteSpecification applies concrete domain specifications
-func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	switch s := spec.(type) {
 	case order.ByUserIDSpecification:
 		return db.Where("user_id = ?", s.UserID)

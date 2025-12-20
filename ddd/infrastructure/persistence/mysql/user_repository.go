@@ -112,7 +112,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 
 // FindBySpecification Find users by specification
 // Implements the domain.Repository interface for flexible query composition
-func (r *UserRepository) FindBySpecification(ctx context.Context, spec shared.Specification) ([]*user.User, error) {
+func (r *UserRepository) FindBySpecification(ctx context.Context, spec shared.Specification[*user.User]) ([]*user.User, error) {
 	db := r.getDB(ctx)
 
 	// Apply specification to query
@@ -138,7 +138,7 @@ func (r *UserRepository) FindBySpecification(ctx context.Context, spec shared.Sp
 
 // findOneBySpecification finds a single user by specification
 // Adds LIMIT 1 and returns the first matching user or error
-func (r *UserRepository) findOneBySpecification(ctx context.Context, spec shared.Specification) (*user.User, error) {
+func (r *UserRepository) findOneBySpecification(ctx context.Context, spec shared.Specification[*user.User]) (*user.User, error) {
 	db := r.getDB(ctx)
 
 	// Apply specification to query
@@ -162,14 +162,14 @@ func (r *UserRepository) findOneBySpecification(ctx context.Context, spec shared
 
 // applySpecification applies a domain specification to a GORM query
 // Uses type switches to handle different specification types
-func (r *UserRepository) applySpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+func (r *UserRepository) applySpecification(db *gorm.DB, spec shared.Specification[*user.User]) *gorm.DB {
 	if spec == nil {
 		return db
 	}
 
 	// Handle composite specifications
 	switch s := spec.(type) {
-	case shared.AndSpecification:
+	case shared.AndSpecification[*user.User]:
 		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
 	// Note: OR and NOT specifications are more complex to implement with GORM
 	// For simplicity in this first implementation, we only support AND
@@ -179,7 +179,7 @@ func (r *UserRepository) applySpecification(db *gorm.DB, spec shared.Specificati
 }
 
 // applyConcreteSpecification applies concrete domain specifications
-func (r *UserRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification) *gorm.DB {
+func (r *UserRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification[*user.User]) *gorm.DB {
 	switch s := spec.(type) {
 	case user.ByEmailSpecification:
 		return db.Where("email = ?", s.Email)

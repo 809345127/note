@@ -17,7 +17,12 @@
       "Bash(timeout 30 go build:*)",
       "Bash(cat:*)",
       "Bash(ls:*)",
-      "Bash(go vet:*)"
+      "Bash(go vet:*)",
+      "Bash(go env:*)",
+      "Bash(go:*)",
+      "Bash(echo:*)",
+      "Bash(bash -l -c:*)",
+      "Bash(shopt:*)"
     ],
     "deny": [],
     "ask": []

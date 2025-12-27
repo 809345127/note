@@ -2,7 +2,6 @@ package mocks
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"ddd/domain/order"
@@ -136,7 +135,8 @@ func (r *MockOrderRepository) FindByID(ctx context.Context, id string) (*order.O
 
 	o, exists := r.orders[id]
 	if !exists {
-		return nil, errors.New("order not found")
+		// 使用带堆栈的错误构造函数
+		return nil, order.NewOrderNotFoundError(id)
 	}
 	return o, nil
 }
@@ -174,7 +174,7 @@ func (r *MockOrderRepository) Remove(ctx context.Context, id string) error {
 
 	o, exists := r.orders[id]
 	if !exists {
-		return errors.New("order not found")
+		return order.ErrOrderNotFound
 	}
 
 	// Logical deletion: mark as cancelled

@@ -22,7 +22,9 @@
       "Bash(go:*)",
       "Bash(echo:*)",
       "Bash(bash -l -c:*)",
-      "Bash(shopt:*)"
+      "Bash(shopt:*)",
+      "Bash(tree:*)",
+      "Bash(CGO_ENABLED=1 go test:*)"
     ],
     "deny": [],
     "ask": []

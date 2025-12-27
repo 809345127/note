@@ -1,23 +1,30 @@
 /*
-Package order Application Layer - Order Business Process Orchestration
+Package order - 订单应用服务层
 
-Responsibilities of Application Layer:
-1. Receive external requests (usually from Controller)
-2. Call domain services for business rule validation
-3. Call aggregate root methods to execute business operations
-4. Use UoW to manage transactions and event collection (Outbox pattern)
-5. Return results to caller
+职责:
+1. 接收外部请求（来自 Controller）
+2. 调用领域服务进行业务规则校验
+3. 调用聚合根方法执行业务操作
+4. 使用 UoW 管理事务和事件收集（Outbox 模式）
+5. 返回结果给调用方
 
-Important: Application services do not directly publish events!
-- UoW collects events from aggregates and saves to outbox table before commit
-- OutboxProcessor reads outbox table asynchronously and publishes to message queue
-- This ensures atomicity of events and business data
+错误处理原则:
+1. 领域错误直接向上传递，不在应用层转换
+2. 基础设施错误（如数据库错误）使用 fmt.Errorf 包装添加上下文
+3. API 层统一使用 errors.FromDomainError() 转换为应用错误
+4. 这样保持了错误链完整，便于调试和日志追踪
+
+事件处理:
+- UoW 收集聚合产生的事件，在提交前保存到 outbox 表
+- OutboxProcessor 异步读取 outbox 表并发布到消息队列
+- 这确保了事件和业务数据的原子性
 */
 package order
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"ddd/domain/order"
@@ -112,22 +119,25 @@ type MoneyResponse struct {
 // Application Service Methods - Business Process Orchestration
 // ============================================================================
 
-// CreateOrder Create order
-// Uses UoW to manage transaction and collect events from aggregate
+// CreateOrder 创建订单
+// 使用 UoW 管理事务和收集聚合产生的领域事件
+// 错误处理: 领域错误直接传递，基础设施错误添加上下文后传递
 func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*OrderResponse, error) {
 	var o *order.Order
 
 	err := s.uow.Execute(ctx, func(ctx context.Context) error {
-		// Check if user can place order
+		// 1. 检查用户是否可以下单（领域服务校验）
 		canPlaceOrder, err := s.userDomainService.CanUserPlaceOrder(ctx, req.UserID)
 		if err != nil {
-			return err
+			// 基础设施错误: 添加上下文后传递
+			return fmt.Errorf("check user can place order: %w", err)
 		}
 		if !canPlaceOrder {
-			return errors.New("user cannot place order")
+			// 领域错误: 使用领域错误构造函数
+			return order.NewUserCannotPlaceOrderError(req.UserID, "user is not active")
 		}
 
-		// Convert order item requests to domain model
+		// 2. 转换订单项请求为领域模型
 		requests := make([]order.ItemRequest, len(req.Items))
 		for i, item := range req.Items {
 			unitPrice := shared.NewMoney(item.UnitPrice, item.Currency)
@@ -139,33 +149,42 @@ func (s *ApplicationService) CreateOrder(ctx context.Context, req CreateOrderReq
 			}
 		}
 
-		// Create order entity (aggregate root records events internally)
+		// 3. 创建订单聚合（聚合根内部记录领域事件）
 		o, err = order.NewOrder(req.UserID, requests)
 		if err != nil {
+			// 领域错误: 直接传递（如订单项为空等）
 			return err
 		}
 
-		// Save order (uses transaction from context)
+		// 4. 持久化订单（使用上下文中的事务）
 		if err := s.orderRepo.Save(ctx, o); err != nil {
-			return err
+			// 基础设施错误: 添加上下文
+			return fmt.Errorf("save order: %w", err)
 		}
 
-		// Register aggregate with UoW for event collection
+		// 5. 注册聚合到 UoW 用于事件收集
 		s.uow.RegisterNew(o)
 		return nil
 	})
 
 	if err != nil {
+		// 直接返回错误，API 层统一处理
 		return nil, err
 	}
 
 	return s.convertToResponse(o), nil
 }
 
-// GetOrder Get order information
+// GetOrder 获取订单信息
+// 错误处理: 领域错误直接传递，API 层统一转换
 func (s *ApplicationService) GetOrder(ctx context.Context, orderID string) (*OrderResponse, error) {
+	// 从仓储获取订单
+	// 仓储层会返回领域错误 (如 order.ErrOrderNotFound)
 	o, err := s.orderRepo.FindByID(ctx, orderID)
 	if err != nil {
+		// 最佳实践: 领域错误直接传递，不在应用层转换
+		// API 层会使用 errors.FromDomainError() 统一处理
+		// 这样保持了完整的错误链，便于调试
 		return nil, err
 	}
 

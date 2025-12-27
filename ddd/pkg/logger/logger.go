@@ -1,3 +1,24 @@
+/*
+Package logger - 日志包
+
+设计原则:
+1. 使用 zerolog 作为日志库（高性能、结构化）
+2. 支持多种输出格式（JSON/Console）
+3. 支持文件和标准输出
+4. 提供 RequestID 支持，便于请求追踪
+
+使用示例:
+
+	// 基础使用
+	logger.Info().Str("user_id", "123").Msg("user login")
+
+	// 错误日志（推荐在 API 层使用 response.HandleAppError，它会自动记录）
+	logger.Error().Err(err).Str("order_id", id).Msg("failed to get order")
+
+	// 带 RequestID
+	reqLogger := logger.WithRequestID(requestID)
+	reqLogger.Info().Msg("processing request")
+*/
 package logger
 
 import (
@@ -9,26 +30,24 @@ import (
 	"ddd/config"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/pkgerrors"
 )
 
 var log zerolog.Logger
 
-// Init Initialize logger
+// Init 初始化日志
 func Init(cfg *config.LogConfig) error {
-	// Set error stack
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+	// 设置时间格式
 	zerolog.TimeFieldFormat = time.RFC3339
 
-	// Set log level
+	// 设置日志级别
 	level := parseLevel(cfg.Level)
 	zerolog.SetGlobalLevel(level)
 
-	// Set output
+	// 设置输出目标
 	var output io.Writer
 	switch cfg.Output {
 	case "file":
-		// Ensure log directory exists
+		// 确保日志目录存在
 		dir := filepath.Dir(cfg.FilePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
@@ -42,7 +61,7 @@ func Init(cfg *config.LogConfig) error {
 		output = os.Stdout
 	}
 
-	// Set format
+	// 设置格式
 	if cfg.Format == "console" {
 		output = zerolog.ConsoleWriter{
 			Out:        output,
@@ -56,7 +75,7 @@ func Init(cfg *config.LogConfig) error {
 	return nil
 }
 
-// parseLevel Parse log level
+// parseLevel 解析日志级别
 func parseLevel(level string) zerolog.Level {
 	switch level {
 	case "debug":
@@ -72,37 +91,47 @@ func parseLevel(level string) zerolog.Level {
 	}
 }
 
-// Get Get logger instance
+// Get 获取日志实例
 func Get() *zerolog.Logger {
 	return &log
 }
 
-// Debug Debug log
+// Debug 调试日志
 func Debug() *zerolog.Event {
 	return log.Debug()
 }
 
-// Info Info log
+// Info 信息日志
 func Info() *zerolog.Event {
 	return log.Info()
 }
 
-// Warn Warn log
+// Warn 警告日志
 func Warn() *zerolog.Event {
 	return log.Warn()
 }
 
-// Error Error log
+// Error 错误日志
 func Error() *zerolog.Event {
 	return log.Error()
 }
 
-// Fatal Fatal error log
+// Fatal 致命错误日志
 func Fatal() *zerolog.Event {
 	return log.Fatal()
 }
 
-// WithRequestID Add request ID
+// WithRequestID 创建带请求 ID 的日志器
+// 用于在整个请求处理过程中保持请求 ID
 func WithRequestID(requestID string) zerolog.Logger {
 	return log.With().Str("request_id", requestID).Logger()
+}
+
+// WithContext 创建带多个上下文字段的日志器
+func WithContext(fields map[string]string) zerolog.Logger {
+	ctx := log.With()
+	for k, v := range fields {
+		ctx = ctx.Str(k, v)
+	}
+	return ctx.Logger()
 }

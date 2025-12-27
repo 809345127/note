@@ -125,6 +125,9 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 }
 
 // FindByID Find order by ID
+// 错误处理:
+//   - 订单未找到: 返回 order.NewOrderNotFoundError（领域错误，带堆栈）
+//   - 其他数据库错误: 原样返回（基础设施错误，已包含足够信息）
 func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order, error) {
 	db := r.getDB(ctx)
 	var orderPO po.OrderPO
@@ -133,8 +136,11 @@ func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order
 	result := db.First(&orderPO, "id = ?", id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, errors.New("order not found")
+			// 领域错误: 使用带堆栈的构造函数
+			// 堆栈会从这里开始捕获: FindByID -> NewOrderNotFoundError
+			return nil, order.NewOrderNotFoundError(id)
 		}
+		// 基础设施错误: 直接返回，GORM 错误已包含 SQL、连接等信息
 		return nil, result.Error
 	}
 
@@ -244,7 +250,7 @@ func (r *OrderRepository) Remove(ctx context.Context, id string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("order not found")
+		return order.ErrOrderNotFound
 	}
 
 	return nil

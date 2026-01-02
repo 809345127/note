@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 	"ddd/infrastructure/persistence/mysql"
 	"ddd/pkg/logger"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -35,15 +37,16 @@ type App struct {
 // NewApp Create application
 func NewApp(cfg *config.Config) *App {
 	// Initialize logger
-	if err := logger.Init(&cfg.Log); err != nil {
-		logger.Fatal().Err(err).Msg("Failed to initialize logger")
+	if err := logger.Init(&cfg.Log, cfg.App.Env); err != nil {
+		// 使用默认 logger 记录初始化失败
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
 	}
 
-	logger.Info().
-		Str("app", cfg.App.Name).
-		Str("version", cfg.App.Version).
-		Str("env", cfg.App.Env).
-		Msg("Starting application")
+	logger.Info("Starting application",
+		zap.String("app", cfg.App.Name),
+		zap.String("version", cfg.App.Version),
+		zap.String("env", cfg.App.Env))
 
 	var userRepo user.Repository
 	var orderRepo order.Repository
@@ -52,7 +55,7 @@ func NewApp(cfg *config.Config) *App {
 
 	// Select repository and UoW implementation based on configuration
 	if cfg.Database.Type == "mysql" {
-		logger.Info().Msg("Using MySQL/GORM persistence layer")
+		logger.Info("Using MySQL/GORM persistence layer")
 
 		mysqlConfig := &mysql.Config{
 			Host:            cfg.Database.Host,
@@ -68,24 +71,24 @@ func NewApp(cfg *config.Config) *App {
 		var err error
 		db, err = mysqlConfig.Connect()
 		if err != nil {
-			logger.Fatal().Err(err).Msg("Failed to connect to MySQL")
+			logger.Fatal("Failed to connect to MySQL", zap.Error(err))
 		}
 
 		// Test connection
 		sqlDB, err := db.DB()
 		if err != nil {
-			logger.Fatal().Err(err).Msg("Failed to get underlying sql.DB")
+			logger.Fatal("Failed to get underlying sql.DB", zap.Error(err))
 		}
 		if err := sqlDB.Ping(); err != nil {
-			logger.Fatal().Err(err).Msg("Failed to ping MySQL")
+			logger.Fatal("Failed to ping MySQL", zap.Error(err))
 		}
 
-		logger.Info().Msg("Connected to MySQL successfully")
+		logger.Info("Connected to MySQL successfully")
 
 		// Auto migration in development environment
 		if cfg.IsDevelopment() {
 			if err := mysql.AutoMigrate(db); err != nil {
-				logger.Fatal().Err(err).Msg("Failed to auto migrate")
+				logger.Fatal("Failed to auto migrate", zap.Error(err))
 			}
 		}
 
@@ -93,7 +96,7 @@ func NewApp(cfg *config.Config) *App {
 		orderRepo = mysql.NewOrderRepository(db)
 		uow = mysql.NewUnitOfWork(db)
 	} else {
-		logger.Info().Msg("Using Mock persistence layer")
+		logger.Info("Using Mock persistence layer")
 		userRepo = mocks.NewMockUserRepository()
 		orderRepo = mocks.NewMockOrderRepository()
 		uow = mocks.NewMockUnitOfWork()
@@ -136,13 +139,12 @@ func NewApp(cfg *config.Config) *App {
 func (a *App) Run() error {
 	// Start server
 	go func() {
-		logger.Info().
-			Str("port", a.config.Server.Port).
-			Str("health", "http://localhost:"+a.config.Server.Port+"/api/v1/health").
-			Msg("Server started")
+		logger.Info("Server started",
+			zap.String("port", a.config.Server.Port),
+			zap.String("health", "http://localhost:"+a.config.Server.Port+"/api/v1/health"))
 
 		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal().Err(err).Msg("Failed to start server")
+			logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
@@ -151,14 +153,14 @@ func (a *App) Run() error {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info().Msg("Shutting down server...")
+	logger.Info("Shutting down server...")
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), a.config.Server.ShutdownTimeout)
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {
-		logger.Error().Err(err).Msg("Server forced to shutdown")
+		logger.Error("Server forced to shutdown", zap.Error(err))
 		return err
 	}
 
@@ -167,12 +169,12 @@ func (a *App) Run() error {
 		sqlDB, err := a.db.DB()
 		if err == nil {
 			if err := sqlDB.Close(); err != nil {
-				logger.Error().Err(err).Msg("Error closing database connection")
+				logger.Error("Error closing database connection", zap.Error(err))
 			}
 		}
 	}
 
-	logger.Info().Msg("Server exited properly")
+	logger.Info("Server exited properly")
 	return nil
 }
 

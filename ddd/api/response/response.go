@@ -27,6 +27,7 @@ import (
 	"ddd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // RequestIDKey context key for request id propagation
@@ -140,13 +141,12 @@ func HandleError(c *gin.Context, err error, message string, code int) {
 	requestID := getRequestID(c)
 
 	// 记录错误日志
-	logger.Error().
-		Str("request_id", requestID).
-		Str("path", c.Request.URL.Path).
-		Str("method", c.Request.Method).
-		Int("status", code).
-		Err(err).
-		Msg(message)
+	logger.Error(message,
+		zap.String("request_id", requestID),
+		zap.String("path", c.Request.URL.Path),
+		zap.String("method", c.Request.Method),
+		zap.Int("status", code),
+		zap.Error(err))
 
 	response := &Response{
 		Success:   false,
@@ -173,21 +173,23 @@ func HandleAppError(c *gin.Context, err error) {
 	// 提取堆栈：优先从错误中提取"发生点"堆栈
 	stack := extractStack(err)
 
-	// 记录完整错误日志
-	logEvent := logger.Error().
-		Str("request_id", requestID).
-		Str("path", c.Request.URL.Path).
-		Str("method", c.Request.Method).
-		Str("error_code", string(appErr.Code)).
-		Int("http_status", httpStatus).
-		Strs("stack", stack)
+	// 构建日志字段
+	fields := []zap.Field{
+		zap.String("request_id", requestID),
+		zap.String("path", c.Request.URL.Path),
+		zap.String("method", c.Request.Method),
+		zap.String("error_code", string(appErr.Code)),
+		zap.Int("http_status", httpStatus),
+		zap.Strings("stack", stack),
+	}
 
 	// 如果有内部错误，记录完整错误链
 	if appErr.Err != nil {
-		logEvent = logEvent.Err(appErr.Err)
+		fields = append(fields, zap.Error(appErr.Err))
 	}
 
-	logEvent.Msg(appErr.Message)
+	// 记录完整错误日志
+	logger.Error(appErr.Message, fields...)
 
 	// 构建响应 - 不暴露内部错误细节
 	userMessage := appErr.Message

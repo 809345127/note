@@ -14,7 +14,7 @@ A Domain-Driven Design example project in Go, demonstrating DDD patterns through
 
 ### Requirements
 
-- Go 1.21+
+- Go 1.24+
 
 ### Run
 

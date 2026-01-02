@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -53,27 +54,30 @@ func LoggingMiddleware() gin.HandlerFunc {
 		// Calculate latency
 		latency := time.Since(start)
 
-		// Log the request
-		event := log.Info()
-		if c.Writer.Status() >= 400 {
-			event = log.Warn()
-		}
-		if c.Writer.Status() >= 500 {
-			event = log.Error()
-		}
-
+		// Update path with query if needed
 		if raw != "" {
 			path = path + "?" + raw
 		}
 
-		event.
-			Str("method", c.Request.Method).
-			Str("path", path).
-			Int("status", c.Writer.Status()).
-			Dur("latency", latency).
-			Str("client_ip", c.ClientIP()).
-			Int("body_size", c.Writer.Size()).
-			Msg("HTTP Request")
+		// Prepare log fields
+		fields := []zap.Field{
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.Int("status", c.Writer.Status()),
+			zap.Duration("latency", latency),
+			zap.String("client_ip", c.ClientIP()),
+			zap.Int("body_size", c.Writer.Size()),
+		}
+
+		// Log based on status code
+		switch {
+		case c.Writer.Status() >= 500:
+			log.Error("HTTP Request", fields...)
+		case c.Writer.Status() >= 400:
+			log.Warn("HTTP Request", fields...)
+		default:
+			log.Info("HTTP Request", fields...)
+		}
 	}
 }
 
@@ -86,11 +90,10 @@ func RecoveryMiddleware() gin.HandlerFunc {
 				reqID, _ := requestID.(string)
 
 				// Log panic
-				logger.Error().
-					Str("request_id", reqID).
-					Interface("error", recovered).
-					Str("path", c.Request.URL.Path).
-					Msg("Panic recovered")
+				logger.Error("Panic recovered",
+					zap.String("request_id", reqID),
+					zap.Any("error", recovered),
+					zap.String("path", c.Request.URL.Path))
 
 				// Return 500 error (call response method only once)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, response.Response{
@@ -203,10 +206,9 @@ func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 			requestID, _ := c.Get(response.RequestIDKey)
 			reqID, _ := requestID.(string)
 
-			logger.Warn().
-				Str("request_id", reqID).
-				Str("client_ip", ip).
-				Msg("Rate limit exceeded")
+			logger.Warn("Rate limit exceeded",
+				zap.String("request_id", reqID),
+				zap.String("client_ip", ip))
 
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, response.Response{
 				Success:   false,

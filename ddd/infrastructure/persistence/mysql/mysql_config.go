@@ -73,7 +73,7 @@ func (c *Config) Connect() (*gorm.DB, error) {
 // AutoMigrate Auto migrate database schema
 // Note: Only use in development environment, use migration tools in production
 func AutoMigrate(db *gorm.DB) error {
-	logger.Info().Msg("Running database auto migration...")
+	logger.Info("Running database auto migration...")
 
 	err := db.AutoMigrate(
 		&po.UserPO{},
@@ -85,6 +85,6 @@ func AutoMigrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to auto migrate: %w", err)
 	}
 
-	logger.Info().Msg("Database migration completed")
+	logger.Info("Database migration completed")
 	return nil
 }

@@ -35,14 +35,13 @@ type ServerConfig struct {
 
 // RateLimitConfig Rate Limiting Configuration
 type RateLimitConfig struct {
-	Enabled  bool    `mapstructure:"enabled"`
-	Rate     float64 `mapstructure:"rate"`      // Requests per second
-	Burst    int     `mapstructure:"burst"`     // Burst capacity
+	Enabled bool    `mapstructure:"enabled"`
+	Rate    float64 `mapstructure:"rate"`  // Requests per second
+	Burst   int     `mapstructure:"burst"` // Burst capacity
 }
 
 // DatabaseConfig Database Configuration
 type DatabaseConfig struct {
-	Type            string        `mapstructure:"type"` // mysql, mock
 	Host            string        `mapstructure:"host"`
 	Port            string        `mapstructure:"port"`
 	Username        string        `mapstructure:"username"`
@@ -69,10 +68,10 @@ type RetryConfig struct {
 
 // LogConfig Log Configuration
 type LogConfig struct {
-	Level      string `mapstructure:"level"`       // debug, info, warn, error
-	Format     string `mapstructure:"format"`      // json, console
-	Output     string `mapstructure:"output"`      // stdout, file
-	FilePath   string `mapstructure:"file_path"`
+	Level    string `mapstructure:"level"`  // debug, info, warn, error
+	Format   string `mapstructure:"format"` // json, console
+	Output   string `mapstructure:"output"` // stdout, file
+	FilePath string `mapstructure:"file_path"`
 }
 
 // CORSConfig CORS Configuration
@@ -149,7 +148,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.rate_limit.burst", 200)
 
 	// Database
-	v.SetDefault("database.type", "mock")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", "3306")
 	v.SetDefault("database.username", "root")

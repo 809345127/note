@@ -20,7 +20,6 @@ ddd/
 │   └── middleware/
 └── infrastructure/         # Implementations (implements domain interfaces)
     └── persistence/
-        ├── mocks/
         └── mysql/
 ```
 

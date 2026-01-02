@@ -10,7 +10,7 @@ import (
 // T is the domain entity type (e.g., *order.Order, *user.User)
 type Specification[T any] interface {
 	// IsSatisfiedBy checks if an entity satisfies the specification
-	// This method is used for in-memory filtering (e.g., in mock repositories)
+// This method is used for in-memory filtering
 	IsSatisfiedBy(ctx context.Context, entity T) bool
 }
 

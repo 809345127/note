@@ -85,7 +85,6 @@ ddd/
 │   └── order/
 ├── infrastructure/         # Infrastructure Layer
 │   └── persistence/
-│       ├── mocks/
 │       └── mysql/
 ├── cmd/
 └── main.go

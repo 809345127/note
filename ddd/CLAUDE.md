@@ -4,17 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Domain-Driven Design (DDD) example project implemented in Go, demonstrating DDD patterns through a user management and order management system. It supports both Mock and MySQL storage backends.
+This is a Domain-Driven Design (DDD) example project implemented in Go, demonstrating DDD patterns through a user management and order management system. It uses MySQL as the primary storage backend.
 
 ## Common Commands
 
 ```bash
-# Run application (default Mock storage)
+# Run application (MySQL storage)
 go run .
 go run . -port 8080
-
-# Run with MySQL
-DDD_DATABASE_TYPE=mysql go run .
 
 # Build
 make build
@@ -64,7 +61,6 @@ Presentation Layer (api/) → Application Layer (application/) → Domain Layer 
 
 - **infrastructure/persistence/**: Repository and UoW implementations
   - `context.go`: Transaction propagation via context
-  - `mocks/`: In-memory mock implementations (MockUnitOfWork, repositories)
   - `mysql/`: MySQL implementations with GORM (UnitOfWork, repositories, PO objects)
 
 ### Key DDD Patterns

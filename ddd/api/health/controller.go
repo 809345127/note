@@ -135,8 +135,8 @@ func (c *Controller) Readiness(ctx *gin.Context) {
 func (c *Controller) checkDatabase() Check {
 	if c.db == nil {
 		return Check{
-			Status:  "healthy",
-			Message: "using mock database",
+			Status:  "unhealthy",
+			Message: "database connection not initialized",
 		}
 	}
 

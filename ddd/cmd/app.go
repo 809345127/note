@@ -18,7 +18,6 @@ import (
 	"ddd/domain/order"
 	"ddd/domain/shared"
 	"ddd/domain/user"
-	"ddd/infrastructure/persistence/mocks"
 	"ddd/infrastructure/persistence/mysql"
 	"ddd/pkg/logger"
 
@@ -53,65 +52,58 @@ func NewApp(cfg *config.Config) *App {
 	var uow shared.UnitOfWork
 	var db *gorm.DB
 
-	// Select repository and UoW implementation based on configuration
-	if cfg.Database.Type == "mysql" {
-		logger.Info("Using MySQL/GORM persistence layer")
+	// Use MySQL/GORM persistence layer
+	logger.Info("Using MySQL/GORM persistence layer")
 
-		mysqlConfig := &mysql.Config{
-			Host:            cfg.Database.Host,
-			Port:            cfg.Database.Port,
-			Username:        cfg.Database.Username,
-			Password:        cfg.Database.Password,
-			Database:        cfg.Database.Database,
-			MaxOpenConns:    cfg.Database.MaxOpenConns,
-			MaxIdleConns:    cfg.Database.MaxIdleConns,
-			ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
-		}
-
-		var err error
-		db, err = mysqlConfig.Connect()
-		if err != nil {
-			logger.Fatal("Failed to connect to MySQL", zap.Error(err))
-		}
-
-		// Test connection
-		sqlDB, err := db.DB()
-		if err != nil {
-			logger.Fatal("Failed to get underlying sql.DB", zap.Error(err))
-		}
-		if err := sqlDB.Ping(); err != nil {
-			logger.Fatal("Failed to ping MySQL", zap.Error(err))
-		}
-
-		logger.Info("Connected to MySQL successfully")
-
-		// Auto migration in development environment
-		if cfg.IsDevelopment() {
-			if err := mysql.AutoMigrate(db); err != nil {
-				logger.Fatal("Failed to auto migrate", zap.Error(err))
-			}
-		}
-
-		userRepo = mysql.NewUserRepository(db)
-		orderRepo = mysql.NewOrderRepository(db)
-		uow = mysql.NewUnitOfWork(db)
-	} else {
-		logger.Info("Using Mock persistence layer")
-		userRepo = mocks.NewMockUserRepository()
-		orderRepo = mocks.NewMockOrderRepository()
-		uow = mocks.NewMockUnitOfWork()
+	mysqlConfig := &mysql.Config{
+		Host:            cfg.Database.Host,
+		Port:            cfg.Database.Port,
+		Username:        cfg.Database.Username,
+		Password:        cfg.Database.Password,
+		Database:        cfg.Database.Database,
+		MaxOpenConns:    cfg.Database.MaxOpenConns,
+		MaxIdleConns:    cfg.Database.MaxIdleConns,
+		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
 	}
+
+	var err error
+	db, err = mysqlConfig.Connect()
+	if err != nil {
+		logger.Fatal("Failed to connect to MySQL", zap.Error(err))
+	}
+
+	// Test connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Fatal("Failed to get underlying sql.DB", zap.Error(err))
+	}
+	if err := sqlDB.Ping(); err != nil {
+		logger.Fatal("Failed to ping MySQL", zap.Error(err))
+	}
+
+	logger.Info("Connected to MySQL successfully")
+
+	// Auto migration in development environment
+	if cfg.IsDevelopment() {
+		if err := mysql.AutoMigrate(db); err != nil {
+			logger.Fatal("Failed to auto migrate", zap.Error(err))
+		}
+	}
+
+	userRepo = mysql.NewUserRepository(db)
+	orderRepo = mysql.NewOrderRepository(db)
+	uow = mysql.NewUnitOfWork(db)
 
 	// Create application services with UoW for transaction management
 	userService := userapp.NewApplicationService(userRepo, orderRepo, uow)
 	orderService := orderapp.NewApplicationService(orderRepo, userRepo, uow)
 
 	// Create controllers (health check needs sql.DB for connection check)
-	var sqlDB interface{}
+	var healthDB interface{}
 	if db != nil {
-		sqlDB, _ = db.DB()
+		healthDB, _ = db.DB()
 	}
-	healthController := healthapi.NewController(cfg, sqlDB)
+	healthController := healthapi.NewController(cfg, healthDB)
 	userController := userapi.NewController(userService)
 	orderController := orderapi.NewController(orderService)
 

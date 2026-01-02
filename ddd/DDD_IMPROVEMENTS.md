@@ -178,9 +178,7 @@ The project already implements solid DDD patterns:
        - `FindByUserID()` → Uses `ByUserIDSpecification`
        - `FindDeliveredOrdersByUserID()` → Uses `AND(ByUserIDSpecification, ByStatusSpecification)`
        - `FindByEmail()` → Uses `ByEmailSpecification` via `findOneBySpecification()`
-   - **Mock Repositories** (`infrastructure/persistence/mocks/`):
-     - `order_repository.go`: Implements `FindBySpecification()` with in-memory filtering using `IsSatisfiedBy()`
-     - `user_repository.go`: Same pattern for mock implementation
+
    - **Repository-based Specification Application**:
      - Each repository implements its own `applySpecification()` logic
      - No separate translator abstraction needed

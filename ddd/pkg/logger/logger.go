@@ -170,7 +170,7 @@ func WithRequestID(requestID string) *zap.Logger {
 
 // WithContext 创建带多个上下文字段的日志器
 // 支持多种数据类型的字段值
-func WithContext(fields map[string]interface{}) *zap.Logger {
+func WithContext(fields map[string]any) *zap.Logger {
 	if log != nil {
 		zapFields := make([]zap.Field, 0, len(fields))
 		for k, v := range fields {

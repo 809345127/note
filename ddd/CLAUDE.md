@@ -13,25 +13,7 @@ This is a Domain-Driven Design (DDD) example project implemented in Go, demonstr
 go run .
 go run . -port 8080
 
-# Build
-make build
 
-# Run tests
-make test
-go test -v -race -cover ./...
-
-# Lint
-make lint
-
-# Format code
-make fmt
-
-# Development mode with hot reload (requires air)
-make dev
-
-# Install development tools
-make install-tools
-```
 
 ## Architecture
 

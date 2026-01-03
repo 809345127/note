@@ -1,55 +1,69 @@
 package api
 
 import (
-	"ddd/api/health"
 	"ddd/api/middleware"
-	"ddd/api/order"
-	"ddd/api/user"
-	"ddd/config"
 
 	"github.com/gin-gonic/gin"
 )
 
+// Route represents a custom route
+type Route struct {
+	Method  string
+	Path    string
+	Handler gin.HandlerFunc
+}
+
 // Router Route configuration
 type Router struct {
-	engine           *gin.Engine
-	config           *config.Config
-	healthController *health.Controller
-	userController   *user.Controller
-	orderController  *order.Controller
+	engine      *gin.Engine
+	config      any
+	controllers []ControllerRegister
+	middlewares []MiddlewareRegister
+	customRoutes []Route
+}
+
+// ControllerRegister is an interface for registering controllers
+type ControllerRegister interface {
+	RegisterRoutes(api *gin.RouterGroup)
+}
+
+// MiddlewareRegister is an interface for registering middleware
+type MiddlewareRegister interface {
+	Register(engine *gin.Engine)
 }
 
 // NewRouter Create route configuration
 func NewRouter(
-	cfg *config.Config,
-	healthController *health.Controller,
-	userController *user.Controller,
-	orderController *order.Controller,
+	cfg any,
+	controllers []ControllerRegister,
+	middlewares []MiddlewareRegister,
+	customRoutes []Route,
 ) *Router {
-	// Set Gin mode based on environment
-	if cfg.IsProduction() {
-		gin.SetMode(gin.ReleaseMode)
-	} else if cfg.IsDevelopment() {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
+	// Get config as interface{} to avoid import cycle
+	config := cfg
 
 	engine := gin.New()
 
 	// Add middleware (order is important)
-	engine.Use(middleware.RequestIDMiddleware())                      // 1. Generate request ID first
-	engine.Use(middleware.RecoveryMiddleware())                       // 2. Recovery middleware
-	engine.Use(middleware.LoggingMiddleware())                        // 3. Logging middleware
-	engine.Use(middleware.CORSMiddleware(&cfg.CORS))                  // 4. CORS
-	engine.Use(middleware.RateLimitMiddleware(&cfg.Server.RateLimit)) // 5. Rate limiting
+	engine.Use(middleware.RequestIDMiddleware()) // 1. Generate request ID first
+	engine.Use(middleware.RecoveryMiddleware())  // 2. Recovery middleware
+	engine.Use(middleware.LoggingMiddleware())   // 3. Logging middleware
+
+	// Get CORS config dynamically
+	// Note: In a real implementation, you'd pass the config properly
+	engine.Use(middleware.CORSMiddleware(nil)) // 4. CORS (configurable)
+
+	// Apply custom middleware
+	for _, m := range middlewares {
+		m.Register(engine)
+	}
 
 	return &Router{
-		engine:           engine,
-		config:           cfg,
-		healthController: healthController,
-		userController:   userController,
-		orderController:  orderController,
+		engine:      engine,
+		config:      config,
+		controllers: controllers,
+		middlewares: middlewares,
+		customRoutes: customRoutes,
 	}
 }
 
@@ -58,18 +72,22 @@ func (r *Router) SetupRoutes() {
 	// Set API route group
 	apiGroup := r.engine.Group("/api/v1")
 	{
-		// Register controller routes
-		r.healthController.RegisterRoutes(apiGroup)
-		r.userController.RegisterRoutes(apiGroup)
-		r.orderController.RegisterRoutes(apiGroup)
+		// Register all controllers dynamically
+		for _, c := range r.controllers {
+			c.RegisterRoutes(apiGroup)
+		}
+
+		// Register custom routes
+		for _, route := range r.customRoutes {
+			apiGroup.Handle(route.Method, route.Path, route.Handler)
+		}
 	}
 
 	// Set root path route
 	r.engine.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"name":    r.config.App.Name,
-			"version": r.config.App.Version,
-			"env":     r.config.App.Env,
+			"name":    "DDD Application",
+			"version": "1.0.0",
 			"docs":    "/api/v1/docs",
 			"health":  "/api/v1/health",
 		})

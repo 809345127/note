@@ -107,8 +107,11 @@ func NewApp(cfg *config.Config) *App {
 	userController := userapi.NewController(userService)
 	orderController := orderapi.NewController(orderService)
 
-	// Create router
-	router := api.NewRouter(cfg, healthController, userController, orderController)
+	// Create router with variadic controllers
+	router := api.NewRouter(cfg,
+		[]api.ControllerRegister{healthController, userController, orderController},
+		[]api.MiddlewareRegister{},
+		[]api.Route{})
 	router.SetupRoutes()
 
 	// Create HTTP server

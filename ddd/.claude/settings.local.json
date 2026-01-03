@@ -24,9 +24,18 @@
       "Bash(bash -l -c:*)",
       "Bash(shopt:*)",
       "Bash(tree:*)",
-      "Bash(CGO_ENABLED=1 go test:*)"
+      "Bash(CGO_ENABLED=1 go test:*)",
+      "Bash(gopls serve:*)",
+      "Bash(gopls version:*)",
+      "Bash(gopls references:*)",
+      "Bash(gopls check:*)",
+      "Bash(claude-code doctor:*)",
+      "Bash(claude doctor:*)",
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "skipWebFetchPreflight": true
 }

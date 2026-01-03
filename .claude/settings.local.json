@@ -14,7 +14,12 @@
       "Bash(cat:*)",
       "Bash(npm create vite@latest:*)",
       "Bash(npm run dev)",
-      "mcp__MiniMax__understand_image"
+      "mcp__MiniMax__understand_image",
+      "Bash(~/.claude/statusline-command.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(/tmp/test_api.sh)",
+      "Bash(timeout:*)",
+      "Bash(claude -p:*)"
     ],
     "deny": [],
     "ask": []

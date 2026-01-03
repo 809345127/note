@@ -13,7 +13,8 @@
       "Bash(go mod tidy:*)",
       "Bash(cat:*)",
       "Bash(npm create vite@latest:*)",
-      "Bash(npm run dev)"
+      "Bash(npm run dev)",
+      "mcp__MiniMax__understand_image"
     ],
     "deny": [],
     "ask": []

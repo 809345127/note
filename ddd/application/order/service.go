@@ -214,36 +214,43 @@ type UpdateOrderStatusRequest struct {
 
 // UpdateOrderStatus Update order status
 func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOrderStatusRequest) error {
-	o, err := s.orderRepo.FindByID(ctx, req.OrderID)
-	if err != nil {
-		return err
-	}
+	return s.uow.Execute(ctx, func(ctx context.Context) error {
+		o, err := s.orderRepo.FindByID(ctx, req.OrderID)
+		if err != nil {
+			return err
+		}
 
-	// Update order based on requested status
-	switch order.Status(req.Status) {
-	case order.StatusPending:
-		// No action needed
-	case order.StatusConfirmed:
-		if err := o.Confirm(); err != nil {
-			return err
+		// Update order based on requested status
+		switch order.Status(req.Status) {
+		case order.StatusPending:
+			// No action needed
+		case order.StatusConfirmed:
+			if err := o.Confirm(); err != nil {
+				return err
+			}
+		case order.StatusShipped:
+			if err := o.Ship(); err != nil {
+				return err
+			}
+		case order.StatusDelivered:
+			if err := o.Deliver(); err != nil {
+				return err
+			}
+		case order.StatusCancelled:
+			if err := o.Cancel(); err != nil {
+				return err
+			}
+		default:
+			return errors.New("invalid order status")
 		}
-	case order.StatusShipped:
-		if err := o.Ship(); err != nil {
-			return err
-		}
-	case order.StatusDelivered:
-		if err := o.Deliver(); err != nil {
-			return err
-		}
-	case order.StatusCancelled:
-		if err := o.Cancel(); err != nil {
-			return err
-		}
-	default:
-		return errors.New("invalid order status")
-	}
 
-	return s.orderRepo.Save(ctx, o)
+		if err := s.orderRepo.Save(ctx, o); err != nil {
+			return err
+		}
+
+		s.uow.RegisterDirty(o)
+		return nil
+	})
 }
 
 // ProcessOrder Process order

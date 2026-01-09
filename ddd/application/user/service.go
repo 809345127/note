@@ -105,18 +105,25 @@ type UpdateUserStatusRequest struct {
 
 // UpdateUserStatus Update user status
 func (s *ApplicationService) UpdateUserStatus(ctx context.Context, req UpdateUserStatusRequest) error {
-	u, err := s.userRepo.FindByID(ctx, req.UserID)
-	if err != nil {
-		return err
-	}
+	return s.uow.Execute(ctx, func(ctx context.Context) error {
+		u, err := s.userRepo.FindByID(ctx, req.UserID)
+		if err != nil {
+			return err
+		}
 
-	if req.Active {
-		u.Activate()
-	} else {
-		u.Deactivate()
-	}
+		if req.Active {
+			u.Activate()
+		} else {
+			u.Deactivate()
+		}
 
-	return s.userRepo.Save(ctx, u)
+		if err := s.userRepo.Save(ctx, u); err != nil {
+			return err
+		}
+
+		s.uow.RegisterDirty(u)
+		return nil
+	})
 }
 
 // GetUserTotalSpentRequest Get user total spent request DTO

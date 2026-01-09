@@ -108,7 +108,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, e
 	result := r.getDB(ctx).First(&userPO, "id = ?", id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+			return nil, shared.NewNotFoundError("user")
 		}
 		return nil, result.Error
 	}

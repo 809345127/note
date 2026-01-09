@@ -59,7 +59,7 @@ func (c *Controller) GetUser(ctx *gin.Context) {
 
 	user, err := c.userService.GetUser(ctx.Request.Context(), userID)
 	if err != nil {
-		response.HandleError(ctx, err, "User not found", http.StatusNotFound)
+		response.HandleAppError(ctx, err)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (c *Controller) UpdateUserStatus(ctx *gin.Context) {
 	}
 
 	if err := c.userService.UpdateUserStatus(ctx.Request.Context(), updateReq); err != nil {
-		response.HandleError(ctx, err, "Failed to update user status", http.StatusInternalServerError)
+		response.HandleAppError(ctx, err)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (c *Controller) GetUserTotalSpent(ctx *gin.Context) {
 	req := userapp.GetUserTotalSpentRequest{UserID: userID}
 	resp, err := c.userService.GetUserTotalSpent(ctx.Request.Context(), req)
 	if err != nil {
-		response.HandleError(ctx, err, "Failed to get user total spent", http.StatusInternalServerError)
+		response.HandleAppError(ctx, err)
 		return
 	}
 

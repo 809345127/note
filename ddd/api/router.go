@@ -2,6 +2,7 @@ package api
 
 import (
 	"ddd/api/middleware"
+	"ddd/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,10 +16,9 @@ type Route struct {
 
 // Router Route configuration
 type Router struct {
-	engine      *gin.Engine
-	config      any
-	controllers []ControllerRegister
-	middlewares []MiddlewareRegister
+	engine       *gin.Engine
+	controllers  []ControllerRegister
+	middlewares  []MiddlewareRegister
 	customRoutes []Route
 }
 
@@ -34,14 +34,11 @@ type MiddlewareRegister interface {
 
 // NewRouter Create route configuration
 func NewRouter(
-	cfg any,
+	cfg *config.Config,
 	controllers []ControllerRegister,
 	middlewares []MiddlewareRegister,
 	customRoutes []Route,
 ) *Router {
-	// Get config as interface{} to avoid import cycle
-	config := cfg
-
 	engine := gin.New()
 
 	// Add middleware (order is important)
@@ -49,9 +46,8 @@ func NewRouter(
 	engine.Use(middleware.RecoveryMiddleware())  // 2. Recovery middleware
 	engine.Use(middleware.LoggingMiddleware())   // 3. Logging middleware
 
-	// Get CORS config dynamically
-	// Note: In a real implementation, you'd pass the config properly
-	engine.Use(middleware.CORSMiddleware(nil)) // 4. CORS (configurable)
+	// CORS middleware with config
+	engine.Use(middleware.CORSMiddleware(&cfg.CORS)) // 4. CORS
 
 	// Apply custom middleware
 	for _, m := range middlewares {
@@ -59,10 +55,9 @@ func NewRouter(
 	}
 
 	return &Router{
-		engine:      engine,
-		config:      config,
-		controllers: controllers,
-		middlewares: middlewares,
+		engine:       engine,
+		controllers:  controllers,
+		middlewares:  middlewares,
 		customRoutes: customRoutes,
 	}
 }

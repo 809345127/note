@@ -9,7 +9,6 @@ import (
 	"ddd/infrastructure/persistence"
 	"ddd/infrastructure/persistence/mysql/po"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -31,11 +30,6 @@ func (r *UserRepository) getDB(ctx context.Context) *gorm.DB {
 		return tx
 	}
 	return r.db.WithContext(ctx)
-}
-
-// NextIdentity Generate new user ID
-func (r *UserRepository) NextIdentity() string {
-	return "user-" + uuid.New().String()
 }
 
 // Save Save user (create or update)
@@ -64,15 +58,29 @@ func (r *UserRepository) saveWithTx(tx *gorm.DB, u *user.User) error {
 			return err
 		}
 	} else {
-		// Existing aggregate: update with optimistic lock check
+		// Existing aggregate: use optimistic locking and dirty tracking
+
+		// 1. Query current version from database to ensure we use the correct version for WHERE clause
+		// DDD Principle: The repository is responsible for version synchronization between
+		// the domain model and the persistence layer
+		var currentUserPO po.UserPO
+		if err := tx.First(&currentUserPO, "id = ?", u.ID()).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("user not found")
+			}
+			return err
+		}
+		dbVersion := currentUserPO.Version
+
+		// 2. Update with optimistic lock check using database version
 		result := tx.Model(&po.UserPO{}).
-			Where("id = ? AND version = ?", u.ID(), u.Version()).
+			Where("id = ? AND version = ?", u.ID(), dbVersion).
 			Updates(map[string]interface{}{
 				"name":       userPO.Name,
 				"email":      userPO.Email,
 				"age":        userPO.Age,
 				"is_active":  userPO.IsActive,
-				"version":    u.Version() + 1,
+				"version":    dbVersion + 1,
 				"updated_at": userPO.UpdatedAt,
 			})
 
@@ -82,6 +90,10 @@ func (r *UserRepository) saveWithTx(tx *gorm.DB, u *user.User) error {
 		if result.RowsAffected == 0 {
 			return user.ErrConcurrentModification
 		}
+
+		// 3. Notify the aggregate that persistence was successful
+		// DDD Principle: The aggregate controls its own version increment, triggered by persistence
+		u.IncrementVersionForSave()
 	}
 
 	// Clear new flag after successful save

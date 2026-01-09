@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -151,7 +152,7 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 
 		c.Header("Access-Control-Allow-Methods", methods)
 		c.Header("Access-Control-Allow-Headers", headers)
-		c.Header("Access-Control-Max-Age", string(rune(cfg.MaxAge)))
+		c.Header("Access-Control-Max-Age", strconv.Itoa(cfg.MaxAge))
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)

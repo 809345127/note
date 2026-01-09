@@ -32,7 +32,18 @@
       "Bash(claude-code doctor:*)",
       "Bash(claude doctor:*)",
       "mcp__ide__getDiagnostics",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__MiniMax__web_search",
+      "WebFetch(domain:jetbrains.github.io)",
+      "WebFetch(domain:www.jetbrains.com)",
+      "Bash(docker ps:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(mysql:*)",
+      "Bash(bash:*)",
+      "WebFetch(domain:www.minimaxi.com)",
+      "WebFetch(domain:www.zhipuai.cn)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []

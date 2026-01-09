@@ -248,25 +248,32 @@ func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOr
 
 // ProcessOrder Process order
 // Uses UoW to manage transaction and collect events
+// Note: Each retry re-fetches the order from database to avoid stale version issues
 func (s *ApplicationService) ProcessOrder(ctx context.Context, orderID string) error {
 	return s.uow.Execute(ctx, func(ctx context.Context) error {
 		// 1. Verify if order can be processed through domain service
-		o, err := s.orderDomainService.CanProcessOrder(ctx, orderID)
+		// This fetches a fresh order from DB, which is important for retry scenarios
+		if err := s.orderDomainService.ValidateProcessOrder(ctx, orderID); err != nil {
+			return err
+		}
+
+		// 2. Re-fetch the order to ensure we have the latest version for modification
+		o, err := s.orderRepo.FindByID(ctx, orderID)
 		if err != nil {
 			return err
 		}
 
-		// 2. Execute status change (aggregate root method)
+		// 3. Execute status change (aggregate root method)
 		if err := o.Confirm(); err != nil {
 			return err
 		}
 
-		// 3. Save (uses transaction from context)
+		// 4. Save (uses transaction from context)
 		if err := s.orderRepo.Save(ctx, o); err != nil {
 			return err
 		}
 
-		// 4. Register aggregate for event collection
+		// 5. Register aggregate for event collection
 		s.uow.RegisterDirty(o)
 		return nil
 	})

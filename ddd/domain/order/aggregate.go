@@ -113,7 +113,7 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		}
 
 		items[i] = OrderItem{
-			id:          uuid.New().String(),
+			id:          uuid.Must(uuid.NewV7()).String(),
 			productID:   req.ProductID,
 			productName: req.ProductName,
 			quantity:    req.Quantity,
@@ -134,7 +134,7 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 
 	now := time.Now()
 	order := &Order{
-		id:          uuid.New().String(),
+		id:          uuid.Must(uuid.NewV7()).String(),
 		userID:      userID,
 		items:       items,
 		totalAmount: *totalAmount,
@@ -192,6 +192,7 @@ func RebuildFromDTO(dto ReconstructionDTO) *Order {
 		createdAt:   dto.CreatedAt,
 		updatedAt:   dto.UpdatedAt,
 		events:      []shared.DomainEvent{},
+		isNew:       false, // Mark as existing aggregate (not newly created)
 	}
 }
 
@@ -239,7 +240,7 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 
 	// Create new order item
 	item := OrderItem{
-		id:          uuid.New().String(),
+		id:          uuid.Must(uuid.NewV7()).String(),
 		productID:   productID,
 		productName: productName,
 		quantity:    quantity,
@@ -336,9 +337,10 @@ func (o *Order) RemoveItem(itemID string) error {
 // DDD Principle: State changes must go through aggregate root methods, not direct field modification
 // Benefits:
 // 1. Encapsulates business rules (e.g., state transition restrictions)
-// 2. Automatically maintains version numbers (optimistic locking)
+// 2. State changes do NOT immediately increment version - version is managed by persistence layer
 // 3. Records domain events
 // 4. Ensures aggregate internal consistency
+// 5. Version is incremented after successful persistence (see incrementVersionForSave)
 
 // Confirm Confirm order (status from PENDING -> CONFIRMED)
 // Business rule: Only pending orders can be confirmed
@@ -349,7 +351,8 @@ func (o *Order) Confirm() error {
 
 	o.status = StatusConfirmed
 	o.updatedAt = time.Now()
-	o.version++
+	// Note: Version is NOT incremented here - it will be incremented after successful save
+	// This ensures optimistic locking uses the correct version from database
 
 	return nil
 }
@@ -363,7 +366,7 @@ func (o *Order) Cancel() error {
 
 	o.status = StatusCancelled
 	o.updatedAt = time.Now()
-	o.version++
+	// Note: Version is NOT incremented here
 
 	return nil
 }
@@ -377,7 +380,7 @@ func (o *Order) Ship() error {
 
 	o.status = StatusShipped
 	o.updatedAt = time.Now()
-	o.version++
+	// Note: Version is NOT incremented here
 
 	return nil
 }
@@ -391,9 +394,17 @@ func (o *Order) Deliver() error {
 
 	o.status = StatusDelivered
 	o.updatedAt = time.Now()
-	o.version++
+	// Note: Version is NOT incremented here
 
 	return nil
+}
+
+// IncrementVersionForSave Increments the version after successful persistence
+// This method is called by the repository after a successful save
+// DDD Principle: Version management is controlled by the aggregate, triggered by persistence
+func (o *Order) IncrementVersionForSave() {
+	o.version++
+	o.updatedAt = time.Now()
 }
 
 // ============================================================================
@@ -476,12 +487,12 @@ func (o *Order) PullEvents() []shared.DomainEvent {
 
 // OrderItem Getters - Allow reading but no external modification
 
-func (item OrderItem) ID() string          { return item.id }
-func (item OrderItem) ProductID() string   { return item.productID }
-func (item OrderItem) ProductName() string { return item.productName }
-func (item OrderItem) Quantity() int       { return item.quantity }
-func (item OrderItem) UnitPrice() shared.Money    { return item.unitPrice }
-func (item OrderItem) Subtotal() shared.Money     { return item.subtotal }
+func (item OrderItem) ID() string              { return item.id }
+func (item OrderItem) ProductID() string       { return item.productID }
+func (item OrderItem) ProductName() string     { return item.productName }
+func (item OrderItem) Quantity() int           { return item.quantity }
+func (item OrderItem) UnitPrice() shared.Money { return item.unitPrice }
+func (item OrderItem) Subtotal() shared.Money  { return item.subtotal }
 
 // Compile-time check that Order implements AggregateRoot interface
 var _ shared.AggregateRoot = (*Order)(nil)

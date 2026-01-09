@@ -61,7 +61,7 @@ func NewOrder(userID string, items []OrderItemRequest) (*Order, error) {
     }
 
     order := &Order{
-        id:        uuid.New().String(),
+        id:        uuid.Must(uuid.NewV7()).String(),
         userID:    userID,
         status:    OrderStatusPending,
         events:    make([]DomainEvent, 0),
@@ -92,7 +92,7 @@ func (o *Order) AddItem(req OrderItemRequest) error {
     }
 
     item := OrderItem{
-        id:          uuid.New().String(),
+        id:          uuid.Must(uuid.NewV7()).String(),
         productID:   req.ProductID,
         productName: req.ProductName,
         quantity:    req.Quantity,
@@ -210,7 +210,6 @@ func (e Email) Equals(other Email) bool {
 ```go
 // domain/order/repository.go
 type OrderRepository interface {
-    NextIdentity() string
     Save(ctx context.Context, order *Order) error
     FindByID(ctx context.Context, id string) (*Order, error)
     FindByUserID(ctx context.Context, userID string) ([]*Order, error)

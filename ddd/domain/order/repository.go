@@ -8,9 +8,6 @@ import (
 
 // Repository Order repository interface
 type Repository interface {
-	// NextIdentity Generate new order ID
-	NextIdentity() string
-
 	// Save Save or update order aggregate root
 	// If order.Version() == 0 means create, else update
 	// Repository only handles persistence, events collected by UoW and saved to outbox table

@@ -14,8 +14,8 @@ import (
 type OutboxEventPO struct {
 	ID          string    `gorm:"primaryKey;size:64"`
 	AggregateID string    `gorm:"size:64;index;not null"`
-	EventType   string    `gorm:"size:100;index;not null"` // e.g., "user.created", "order.placed"
-	Payload     string    `gorm:"type:json;not null"`      // JSON serialized event data
+	EventType   string    `gorm:"size:100;index;not null"`          // e.g., "user.created", "order.placed"
+	Payload     string    `gorm:"type:json;not null"`               // JSON serialized event data
 	Status      string    `gorm:"size:20;default:PENDING;not null"` // PENDING, PROCESSING, PUBLISHED, FAILED
 	RetryCount  int       `gorm:"default:0;not null"`
 	CreatedAt   time.Time `gorm:"autoCreateTime;index"`
@@ -46,7 +46,7 @@ func FromDomainEvent(event shared.DomainEvent) (*OutboxEventPO, error) {
 	}
 
 	// Generate a unique ID for the outbox event
-	eventID := uuid.New().String()
+	eventID := uuid.Must(uuid.NewV7()).String()
 
 	return &OutboxEventPO{
 		ID:          eventID,
@@ -103,7 +103,6 @@ func serializeEventToJSON(event shared.DomainEvent) (string, error) {
 
 	return string(data), nil
 }
-
 
 // ToEventData Extract event data from outbox PO (for debugging/testing)
 func (po *OutboxEventPO) ToEventData() (map[string]interface{}, error) {

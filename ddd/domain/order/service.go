@@ -51,3 +51,28 @@ func (s *DomainService) CanProcessOrder(ctx context.Context, orderID string) (*O
 
 	return order, nil
 }
+
+// ValidateProcessOrder Validate if order can be processed (without returning the order)
+// This is useful when the caller needs to re-fetch the order for modification
+func (s *DomainService) ValidateProcessOrder(ctx context.Context, orderID string) error {
+	order, err := s.orderRepository.FindByID(ctx, orderID)
+	if err != nil {
+		return err
+	}
+
+	// Validate user status
+	isActive, err := s.userChecker.IsUserActive(ctx, order.UserID())
+	if err != nil {
+		return err
+	}
+	if !isActive {
+		return errors.New("user is not active")
+	}
+
+	// Validate order status
+	if order.Status() != StatusPending {
+		return errors.New("only pending orders can be processed")
+	}
+
+	return nil
+}

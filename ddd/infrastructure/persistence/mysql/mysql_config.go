@@ -39,7 +39,7 @@ type Config struct {
 // DSN Generate data source name with optimized settings for MySQL 8+
 func (c *Config) DSN() string {
 	// Using standard MySQL 8+ compatible DSN with proper charset and collation
-	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local&charset=utf8mb4&collation=utf8mb4_unicode_ci&readTimeout=10s&writeTimeout=10s&allowPublicKeyRetrieval=true",
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local&charset=utf8mb4&collation=utf8mb4_unicode_ci&readTimeout=10s&writeTimeout=10s",
 		c.Username, c.Password, c.Host, c.Port, c.Database)
 }
 

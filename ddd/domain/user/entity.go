@@ -47,7 +47,7 @@ func NewUser(name string, email string, age int) (*User, error) {
 
 	now := time.Now()
 	user := &User{
-		id:        uuid.New().String(),
+		id:        uuid.Must(uuid.NewV7()).String(),
 		name:      name,
 		email:     *emailVO,
 		age:       age,
@@ -71,13 +71,15 @@ func NewUser(name string, email string, age int) (*User, error) {
 //
 // DDD Principle: Entity state changes through behavior methods, not direct field modification
 // Behavior methods encapsulate business rules and automatically maintain version numbers
+// Note: Version is NOT incremented here - it will be incremented after successful save
+// via IncrementVersionForSave() method
 
 // Activate Activate user
 // Business scenario: Admin activates deactivated user account
 func (u *User) Activate() {
 	u.isActive = true
 	u.updatedAt = time.Now()
-	u.version++
+	// Note: Version is NOT incremented here
 }
 
 // Deactivate Deactivate user
@@ -85,7 +87,7 @@ func (u *User) Activate() {
 func (u *User) Deactivate() {
 	u.isActive = false
 	u.updatedAt = time.Now()
-	u.version++
+	// Note: Version is NOT incremented here
 }
 
 // UpdateName Update user name
@@ -96,8 +98,16 @@ func (u *User) UpdateName(name string) error {
 	}
 	u.name = name
 	u.updatedAt = time.Now()
-	u.version++
+	// Note: Version is NOT incremented here
 	return nil
+}
+
+// IncrementVersionForSave Increments the version after successful persistence
+// This method is called by the repository after a successful save
+// DDD Principle: Version management is controlled by the aggregate, triggered by persistence
+func (u *User) IncrementVersionForSave() {
+	u.version++
+	u.updatedAt = time.Now()
 }
 
 // CanMakePurchase Check if user can make purchase

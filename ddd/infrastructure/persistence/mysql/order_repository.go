@@ -9,7 +9,6 @@ import (
 	"ddd/infrastructure/persistence"
 	"ddd/infrastructure/persistence/mysql/po"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -31,11 +30,6 @@ func (r *OrderRepository) getDB(ctx context.Context) *gorm.DB {
 		return tx
 	}
 	return r.db.WithContext(ctx)
-}
-
-// NextIdentity Generate new order ID
-func (r *OrderRepository) NextIdentity() string {
-	return "order-" + uuid.New().String()
 }
 
 // Save Save order (create or update)
@@ -75,14 +69,26 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 	} else {
 		// Existing aggregate: use optimistic locking and dirty tracking
 
-		// 1. Update order with optimistic lock check
+		// 1. Query current version from database to ensure we use the correct version for WHERE clause
+		// DDD Principle: The repository is responsible for version synchronization between
+		// the domain model and the persistence layer
+		var currentOrderPO po.OrderPO
+		if err := tx.First(&currentOrderPO, "id = ?", o.ID()).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return order.ErrOrderNotFound
+			}
+			return err
+		}
+		dbVersion := currentOrderPO.Version
+
+		// 2. Update order with optimistic lock check using database version
 		result := tx.Model(&po.OrderPO{}).
-			Where("id = ? AND version = ?", o.ID(), o.Version()).
-			Updates(map[string]interface{}{
+			Where("id = ? AND version = ?", o.ID(), dbVersion).
+			Updates(map[string]any{
 				"status":         orderPO.Status,
 				"total_amount":   orderPO.TotalAmount,
 				"total_currency": orderPO.TotalCurrency,
-				"version":        o.Version() + 1,
+				"version":        dbVersion + 1,
 				"updated_at":     orderPO.UpdatedAt,
 			})
 
@@ -93,14 +99,18 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 			return order.ErrConcurrentModification
 		}
 
-		// 2. Delete removed items (dirty tracking)
+		// 3. Notify the aggregate that persistence was successful
+		// DDD Principle: The aggregate controls its own version increment, triggered by persistence
+		o.IncrementVersionForSave()
+
+		// 4. Delete removed items (dirty tracking)
 		for _, item := range o.RemovedItems() {
 			if err := tx.Delete(&po.OrderItemPO{}, "id = ?", item.ID()).Error; err != nil {
 				return err
 			}
 		}
 
-		// 3. Insert added items (dirty tracking)
+		// 5. Insert added items (dirty tracking)
 		for _, item := range o.AddedItems() {
 			itemPO := po.OrderItemPO{
 				ID:               o.ID() + "-" + item.ProductID(),
@@ -150,7 +160,9 @@ func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order
 		return nil, err
 	}
 
-	return orderPO.ToDomain(itemPOs), nil
+	// Rebuild to ensure a fresh domain object (important for retry scenarios)
+	o := orderPO.ToDomain(itemPOs)
+	return o, nil
 }
 
 // FindByUserID Find order list by user ID

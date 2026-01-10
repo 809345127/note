@@ -2,7 +2,7 @@ package user
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"ddd/domain/order"
@@ -53,16 +53,11 @@ type UserResponse struct {
 // CreateUser Create user
 // DDD principle: Application service orchestrates business processes
 // UoW manages transaction and collects events from aggregates (Outbox pattern)
+// Email uniqueness is enforced by database unique constraint, not by application check
 func (s *ApplicationService) CreateUser(ctx context.Context, req CreateUserRequest) (*UserResponse, error) {
 	var u *user.User
 
 	err := s.uow.Execute(ctx, func(ctx context.Context) error {
-		// Check if email already exists
-		existingUser, _ := s.userRepo.FindByEmail(ctx, req.Email)
-		if existingUser != nil {
-			return errors.New("email already exists")
-		}
-
 		// Create user entity (aggregate root records domain events upon creation)
 		var err error
 		u, err = user.NewUser(req.Name, req.Email, req.Age)
@@ -71,6 +66,7 @@ func (s *ApplicationService) CreateUser(ctx context.Context, req CreateUserReque
 		}
 
 		// Save user (uses transaction from context)
+		// Database unique constraint will reject duplicate emails
 		if err := s.userRepo.Save(ctx, u); err != nil {
 			return err
 		}
@@ -148,7 +144,15 @@ func (s *ApplicationService) GetUserTotalSpent(ctx context.Context, req GetUserT
 
 	total := shared.NewMoney(0, "CNY")
 	for _, o := range orders {
-		total, _ = total.Add(o.TotalAmount())
+		// Validate currency consistency
+		if o.TotalAmount().Currency() != total.Currency() {
+			return nil, fmt.Errorf("mixed currencies not supported: %s vs %s", o.TotalAmount().Currency(), total.Currency())
+		}
+		var addErr error
+		total, addErr = total.Add(o.TotalAmount())
+		if addErr != nil {
+			return nil, addErr
+		}
 	}
 
 	return &GetUserTotalSpentResponse{

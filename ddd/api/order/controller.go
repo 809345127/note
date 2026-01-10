@@ -94,9 +94,9 @@ func (c *Controller) GetOrder(ctx *gin.Context) {
 
 	order, err := c.orderService.GetOrder(ctx.Request.Context(), orderID)
 	if err != nil {
-		// 业���错误: 自动映射
+		// Business error: automatic mapping
 		// - order.ErrOrderNotFound -> 404
-		// - 其他错误 -> 500
+		// - Other errors -> 500
 		response.HandleAppError(ctx, err)
 		return
 	}

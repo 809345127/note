@@ -17,6 +17,19 @@ import (
 )
 
 const (
+	// DefaultMaxBodySize is the default maximum body size (1MB)
+	DefaultMaxBodySize = 1 << 20 // 1MB
+)
+
+// MaxBodySizeMiddleware limits request body size to prevent DoS attacks
+func MaxBodySizeMiddleware(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		c.Next()
+	}
+}
+
+const (
 	// RequestIDHeader Request ID header
 	RequestIDHeader = "X-Request-ID"
 )
@@ -128,6 +141,7 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 		if allowed {
 			c.Header("Access-Control-Allow-Origin", origin)
 		}
+		c.Header("Vary", "Origin") // Required for proper CDN/proxy caching
 
 		if cfg.AllowCredentials {
 			c.Header("Access-Control-Allow-Credentials", "true")
@@ -163,30 +177,92 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 	}
 }
 
-// RateLimiter Rate limiter
-type RateLimiter struct {
-	limiters sync.Map
-	rate     rate.Limit
-	burst    int
+// limiterWithTime wraps a rate limiter with its creation time for cleanup
+type limiterWithTime struct {
+	limiter     *rate.Limiter
+	createdAt   time.Time
 }
 
-// NewRateLimiter Create rate limiter
+// RateLimiter Rate limiter with automatic cleanup
+type RateLimiter struct {
+	limiters        sync.Map
+	rate            rate.Limit
+	burst           int
+	lastCleanup     time.Time
+	mu              sync.Mutex
+	cleanupInterval time.Duration
+	maxAge          time.Duration // Max age for a limiter before cleanup
+	stopCh          chan struct{} // Channel to signal cleanup goroutine to stop
+}
+
+// NewRateLimiter Create rate limiter with automatic cleanup
 func NewRateLimiter(r float64, burst int) *RateLimiter {
-	return &RateLimiter{
-		rate:  rate.Limit(r),
-		burst: burst,
+	rl := &RateLimiter{
+		rate:            rate.Limit(r),
+		burst:           burst,
+		cleanupInterval: 5 * time.Minute,
+		maxAge:          10 * time.Minute, // Limiter expires after 10 minutes
+		lastCleanup:     time.Now(),
+		stopCh:          make(chan struct{}),
 	}
+	// Start cleanup goroutine
+	go rl.cleanupLoop()
+	return rl
+}
+
+// cleanupLoop Periodically cleans up old limiters
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			rl.cleanup()
+		case <-rl.stopCh:
+			return
+		}
+	}
+}
+
+// Stop Stops the cleanup goroutine
+// Should be called during server shutdown
+func (rl *RateLimiter) Stop() {
+	close(rl.stopCh)
+}
+
+// cleanup Remove limiters that haven't been used recently
+func (rl *RateLimiter) cleanup() {
+	// Only cleanup if enough time has passed
+	if time.Since(rl.lastCleanup) < rl.cleanupInterval {
+		return
+	}
+
+	rl.lastCleanup = time.Now()
+
+	// Iterate through all limiters and remove old ones
+	now := time.Now()
+	rl.limiters.Range(func(key, value interface{}) bool {
+		entry := value.(*limiterWithTime)
+		if now.Sub(entry.createdAt) > rl.maxAge {
+			rl.limiters.Delete(key)
+		}
+		return true
+	})
 }
 
 // getLimiter Get or create rate limiter for IP
 func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
-	if limiter, ok := rl.limiters.Load(ip); ok {
-		return limiter.(*rate.Limiter)
+	entry := &limiterWithTime{
+		limiter:   rate.NewLimiter(rl.rate, rl.burst),
+		createdAt: time.Now(),
 	}
-
-	limiter := rate.NewLimiter(rl.rate, rl.burst)
-	rl.limiters.Store(ip, limiter)
-	return limiter
+	// Use LoadOrStore to prevent race condition
+	actual, loaded := rl.limiters.LoadOrStore(ip, entry)
+	if loaded {
+		return actual.(*limiterWithTime).limiter
+	}
+	return entry.limiter
 }
 
 // RateLimitMiddleware Rate limiting middleware

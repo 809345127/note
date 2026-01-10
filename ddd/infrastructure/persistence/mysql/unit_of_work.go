@@ -2,13 +2,20 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"time"
 
 	"ddd/domain/shared"
 	"ddd/infrastructure/persistence"
 	"ddd/infrastructure/persistence/retry"
 
 	"gorm.io/gorm"
+)
+
+const (
+	// DefaultTxTimeout is the default timeout for transaction context
+	DefaultTxTimeout = 30 * time.Second
 )
 
 // UnitOfWork implements the Unit of Work pattern with GORM
@@ -44,13 +51,22 @@ func (u *UnitOfWork) SetRetryConfig(config retry.Config) {
 // 5. Commits on success, rolls back on error
 // 6. Automatically retries on retryable errors (concurrent modification, deadlocks, etc.)
 func (u *UnitOfWork) Execute(ctx context.Context, fn func(ctx context.Context) error) error {
+	// Add default timeout if none is set
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultTxTimeout)
+		defer cancel()
+	}
+
 	// Define the transaction execution function that will be retried
 	executeOnce := func(ctx context.Context) error {
 		// Reset aggregates for this attempt
 		u.aggregates = make([]shared.AggregateRoot, 0)
 
-		// Begin transaction
-		tx := u.db.WithContext(ctx).Begin()
+		// Begin transaction with explicit isolation level
+		tx := u.db.WithContext(ctx).Begin(&sql.TxOptions{
+			Isolation: sql.LevelReadCommitted,
+		})
 		if tx.Error != nil {
 			return fmt.Errorf("failed to begin transaction: %w", tx.Error)
 		}

@@ -177,10 +177,12 @@ func ExecuteWithRetry(ctx context.Context, config Config, fn func(ctx context.Co
 
 		delay := ExponentialBackoffWithJitter(attempt, config)
 		if delay > 0 {
+			timer := time.NewTimer(delay)
 			select {
-			case <-time.After(delay):
-				// Continue to next attempt
+			case <-timer.C:
+				// Continue to next attempt (timer triggered, no need to stop)
 			case <-ctx.Done():
+				timer.Stop()  // Explicitly stop timer on context cancellation
 				return ctx.Err()
 			}
 		}

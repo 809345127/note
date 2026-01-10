@@ -80,22 +80,24 @@ func (c *Controller) Health(ctx *gin.Context) {
 		}
 	}
 
-	// Get system information
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
-
 	response := HealthResponse{
 		Status:    overallStatus,
 		Version:   c.config.App.Version,
 		Uptime:    time.Since(c.startTime).String(),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Checks:    checks,
-		System: &SystemInfo{
+	}
+
+	// Only expose system info in development mode
+	if c.config.IsDevelopment() {
+		var memStats runtime.MemStats
+		runtime.ReadMemStats(&memStats)
+		response.System = &SystemInfo{
 			GoVersion:    runtime.Version(),
 			NumCPU:       runtime.NumCPU(),
 			NumGoroutine: runtime.NumGoroutine(),
 			MemAlloc:     memStats.Alloc,
-		},
+		}
 	}
 
 	statusCode := http.StatusOK

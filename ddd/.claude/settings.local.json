@@ -43,7 +43,10 @@
       "Bash(bash:*)",
       "WebFetch(domain:www.minimaxi.com)",
       "WebFetch(domain:www.zhipuai.cn)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(pgrep:*)",
+      "Bash(./test_api.sh:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

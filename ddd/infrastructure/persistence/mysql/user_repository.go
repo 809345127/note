@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"ddd/domain/shared"
 	"ddd/domain/user"
@@ -32,6 +33,22 @@ func (r *UserRepository) getDB(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
+// isDuplicateKeyError checks if the error is a MySQL duplicate key error
+// MySQL error code 1062: Duplicate entry for key
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for GORM's ErrDuplicatedKey
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	// Fallback: check error message contains "Duplicate entry"
+	errStr := err.Error()
+	return strings.Contains(errStr, "Duplicate entry") ||
+		strings.Contains(errStr, "1062")
+}
+
 // Save Save user (create or update)
 // Uses optimistic locking for concurrency control
 func (r *UserRepository) Save(ctx context.Context, u *user.User) error {
@@ -55,6 +72,10 @@ func (r *UserRepository) saveWithTx(tx *gorm.DB, u *user.User) error {
 	if u.IsNew() {
 		// New aggregate: insert
 		if err := tx.Create(userPO).Error; err != nil {
+			// Handle duplicate key error (MySQL error code 1062)
+			if isDuplicateKeyError(err) {
+				return user.NewEmailAlreadyExistsError(userPO.Email)
+			}
 			return err
 		}
 	} else {
@@ -103,6 +124,11 @@ func (r *UserRepository) saveWithTx(tx *gorm.DB, u *user.User) error {
 
 // FindByID Find user by ID
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*user.User, error) {
+	// Check if context is already cancelled before making DB call
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	var userPO po.UserPO
 
 	result := r.getDB(ctx).First(&userPO, "id = ?", id)
@@ -164,7 +190,7 @@ func (r *UserRepository) findOneBySpecification(ctx context.Context, spec shared
 	result := db.First(&userPO)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+			return nil, nil // Not found is a normal case for FindByEmail
 		}
 		return nil, result.Error
 	}
@@ -174,6 +200,7 @@ func (r *UserRepository) findOneBySpecification(ctx context.Context, spec shared
 
 // applySpecification applies a domain specification to a GORM query
 // Uses type switches to handle different specification types
+// DDD Principle: Infrastructure adapts domain specifications to persistence queries
 func (r *UserRepository) applySpecification(db *gorm.DB, spec shared.Specification[*user.User]) *gorm.DB {
 	if spec == nil {
 		return db
@@ -183,10 +210,52 @@ func (r *UserRepository) applySpecification(db *gorm.DB, spec shared.Specificati
 	switch s := spec.(type) {
 	case shared.AndSpecification[*user.User]:
 		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
-	// Note: OR and NOT specifications are more complex to implement with GORM
-	// For simplicity in this first implementation, we only support AND
+	case shared.OrSpecification[*user.User]:
+		// OR: Apply left specification, then chain with Or() for right
+		leftDB := r.applySpecification(db, s.Left)
+		return leftDB.Or(r.applySpecification(db.Session(&gorm.Session{}), s.Right))
+	case shared.NotSpecification[*user.User]:
+		// NOT: Apply negation of the inner specification
+		return r.applyNotSpecification(db, s.Spec)
 	default:
 		return r.applyConcreteSpecification(db, spec)
+	}
+}
+
+// applyNotSpecification applies negation of a specification
+func (r *UserRepository) applyNotSpecification(db *gorm.DB, spec shared.Specification[*user.User]) *gorm.DB {
+	switch s := spec.(type) {
+	case user.ByEmailSpecification:
+		return db.Where("email != ?", s.Email)
+	case user.ByStatusSpecification:
+		return db.Where("is_active != ?", s.Active)
+	case user.ByAgeRangeSpecification:
+		// Negate age range: NOT (age >= min AND age <= max)
+		// Becomes: age < min OR age > max
+		if s.Min > 0 && s.Max > 0 {
+			return db.Where("age < ? OR age > ?", s.Min, s.Max)
+		} else if s.Min > 0 {
+			return db.Where("age < ?", s.Min)
+		} else if s.Max > 0 {
+			return db.Where("age > ?", s.Max)
+		}
+		return db
+	case shared.AndSpecification[*user.User]:
+		// NOT (A AND B) = NOT A OR NOT B (De Morgan's law)
+		leftSpec := shared.Not(s.Left)
+		rightSpec := shared.Not(s.Right)
+		return r.applySpecification(db, shared.Or(leftSpec, rightSpec))
+	case shared.OrSpecification[*user.User]:
+		// NOT (A OR B) = NOT A AND NOT B (De Morgan's law)
+		leftSpec := shared.Not(s.Left)
+		rightSpec := shared.Not(s.Right)
+		return r.applySpecification(db, shared.And(leftSpec, rightSpec))
+	case shared.NotSpecification[*user.User]:
+		// NOT (NOT A) = A (double negation)
+		return r.applySpecification(db, s.Spec)
+	default:
+		// For unknown specification types, return unchanged
+		return db
 	}
 }
 

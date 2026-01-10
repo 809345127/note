@@ -17,7 +17,7 @@ DDD Core Principles:
 package order
 
 import (
-	"errors"
+	"fmt"
 	"time"
 
 	"ddd/domain/shared"
@@ -98,27 +98,38 @@ type ItemRequest struct {
 // This is the only entry point for creating Order, ensuring all business rules are met during order creation
 func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 	if userID == "" {
-		return nil, errors.New("userID cannot be empty")
+		return nil, ErrInvalidOrderState
 	}
 
 	if len(requests) == 0 {
-		return nil, errors.New("order must have at least one item")
+		return nil, ErrEmptyOrderItems
 	}
 
 	// Create order items
 	items := make([]OrderItem, len(requests))
 	for i, req := range requests {
 		if req.Quantity <= 0 {
-			return nil, errors.New("quantity must be positive")
+			return nil, ErrInvalidQuantity
+		}
+
+		// Calculate subtotal with overflow check using Money.Multiply
+		subtotal, err := req.UnitPrice.Multiply(req.Quantity)
+		if err != nil {
+			return nil, err
+		}
+
+		id, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate order item ID: %w", err)
 		}
 
 		items[i] = OrderItem{
-			id:          uuid.Must(uuid.NewV7()).String(),
+			id:          id.String(),
 			productID:   req.ProductID,
 			productName: req.ProductName,
 			quantity:    req.Quantity,
 			unitPrice:   req.UnitPrice,
-			subtotal:    *shared.NewMoney(req.UnitPrice.Amount()*int64(req.Quantity), req.UnitPrice.Currency()),
+			subtotal:    *subtotal,
 		}
 	}
 
@@ -132,9 +143,20 @@ func NewOrder(userID string, requests []ItemRequest) (*Order, error) {
 		}
 	}
 
+	// Validate total amount is positive
+	if totalAmount.Amount() <= 0 {
+		return nil, ErrOrderTotalAmountNotPositive
+	}
+
+	// Generate UUID with proper error handling
+	orderID, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate order ID: %w", err)
+	}
+
 	now := time.Now()
 	order := &Order{
-		id:          uuid.Must(uuid.NewV7()).String(),
+		id:          orderID.String(),
 		userID:      userID,
 		items:       items,
 		totalAmount: *totalAmount,
@@ -191,7 +213,7 @@ func RebuildFromDTO(dto ReconstructionDTO) *Order {
 		version:     dto.Version,
 		createdAt:   dto.CreatedAt,
 		updatedAt:   dto.UpdatedAt,
-		events:      []shared.DomainEvent{},
+		events:      nil, // nil is more idiomatic than empty slice
 		isNew:       false, // Mark as existing aggregate (not newly created)
 	}
 }
@@ -231,21 +253,32 @@ func RebuildItemFromDTO(dto ItemReconstructionDTO) OrderItem {
 func (o *Order) AddItem(productID, productName string, quantity int, unitPrice shared.Money) error {
 	// Verify if current status allows modification
 	if o.status != StatusPending {
-		return errors.New("can only add items to pending orders")
+		return ErrCannotModifyNonPendingOrder
 	}
 
 	if quantity <= 0 {
-		return errors.New("quantity must be positive")
+		return ErrInvalidQuantity
+	}
+
+	// Calculate subtotal with overflow check using Money.Multiply
+	subtotal, calcErr := unitPrice.Multiply(quantity)
+	if calcErr != nil {
+		return calcErr
+	}
+
+	id, idErr := uuid.NewV7()
+	if idErr != nil {
+		return fmt.Errorf("failed to generate order item ID: %w", idErr)
 	}
 
 	// Create new order item
 	item := OrderItem{
-		id:          uuid.Must(uuid.NewV7()).String(),
+		id:          id.String(),
 		productID:   productID,
 		productName: productName,
 		quantity:    quantity,
 		unitPrice:   unitPrice,
-		subtotal:    *shared.NewMoney(unitPrice.Amount()*int64(quantity), unitPrice.Currency()),
+		subtotal:    *subtotal,
 	}
 
 	o.items = append(o.items, item)
@@ -279,7 +312,7 @@ func (o *Order) AddItem(productID, productName string, quantity int, unitPrice s
 // RemoveItem Remove order item through aggregate root
 func (o *Order) RemoveItem(itemID string) error {
 	if o.status != StatusPending {
-		return errors.New("can only remove items from pending orders")
+		return ErrCannotModifyNonPendingOrder
 	}
 
 	// Find and delete order item
@@ -296,7 +329,7 @@ func (o *Order) RemoveItem(itemID string) error {
 	}
 
 	if !found {
-		return errors.New("item not found")
+		return ErrItemNotFound
 	}
 
 	// Track removal for dirty tracking (only if not a new aggregate)
@@ -322,7 +355,11 @@ func (o *Order) RemoveItem(itemID string) error {
 	// Recalculate total amount
 	newTotal := shared.NewMoney(0, "CNY")
 	for _, item := range o.items {
-		newTotal, _ = newTotal.Add(item.subtotal)
+		var err error
+		newTotal, err = newTotal.Add(item.subtotal)
+		if err != nil {
+			return err
+		}
 	}
 	o.totalAmount = *newTotal
 	o.updatedAt = time.Now()
@@ -346,11 +383,13 @@ func (o *Order) RemoveItem(itemID string) error {
 // Business rule: Only pending orders can be confirmed
 func (o *Order) Confirm() error {
 	if o.status != StatusPending {
-		return errors.New("only pending orders can be confirmed")
+		return ErrInvalidOrderStateTransition
 	}
 
 	o.status = StatusConfirmed
 	o.updatedAt = time.Now()
+	// Record domain event
+	o.events = append(o.events, NewOrderConfirmedEvent(o.id))
 	// Note: Version is NOT incremented here - it will be incremented after successful save
 	// This ensures optimistic locking uses the correct version from database
 
@@ -359,13 +398,15 @@ func (o *Order) Confirm() error {
 
 // Cancel Cancel order
 // Business rule: Delivered or cancelled orders cannot be cancelled again
-func (o *Order) Cancel() error {
+func (o *Order) Cancel(reason string) error {
 	if o.status == StatusDelivered || o.status == StatusCancelled {
-		return errors.New("cannot cancel delivered or cancelled orders")
+		return ErrInvalidOrderStateTransition
 	}
 
 	o.status = StatusCancelled
 	o.updatedAt = time.Now()
+	// Record domain event
+	o.events = append(o.events, NewOrderCancelledEvent(o.id, reason))
 	// Note: Version is NOT incremented here
 
 	return nil
@@ -375,11 +416,13 @@ func (o *Order) Cancel() error {
 // Business rule: Only confirmed orders can be shipped
 func (o *Order) Ship() error {
 	if o.status != StatusConfirmed {
-		return errors.New("only confirmed orders can be shipped")
+		return ErrInvalidOrderStateTransition
 	}
 
 	o.status = StatusShipped
 	o.updatedAt = time.Now()
+	// Record domain event
+	o.events = append(o.events, NewOrderShippedEvent(o.id))
 	// Note: Version is NOT incremented here
 
 	return nil
@@ -389,11 +432,13 @@ func (o *Order) Ship() error {
 // Business rule: Only shipped orders can be marked as delivered
 func (o *Order) Deliver() error {
 	if o.status != StatusShipped {
-		return errors.New("only shipped orders can be delivered")
+		return ErrInvalidOrderStateTransition
 	}
 
 	o.status = StatusDelivered
 	o.updatedAt = time.Now()
+	// Record domain event
+	o.events = append(o.events, NewOrderDeliveredEvent(o.id))
 	// Note: Version is NOT incremented here
 
 	return nil

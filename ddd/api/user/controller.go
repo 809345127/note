@@ -42,7 +42,8 @@ func (c *Controller) CreateUser(ctx *gin.Context) {
 
 	user, err := c.userService.CreateUser(ctx.Request.Context(), req)
 	if err != nil {
-		response.HandleError(ctx, err, "Failed to create user", http.StatusInternalServerError)
+		// 使用 HandleAppError 自动映射 HTTP 状态码
+		response.HandleAppError(ctx, err)
 		return
 	}
 

@@ -43,6 +43,24 @@ var (
 	// ErrUserCannotPlaceOrder 用户无法下单
 	// 例如：用户未激活、被禁用等
 	ErrUserCannotPlaceOrder = errors.New("user cannot place order")
+
+	// ErrInvalidQuantity 无效的订单项数量
+	ErrInvalidQuantity = errors.New("quantity must be positive")
+
+	// ErrOrderTotalAmountNotPositive 订单总金额必须为正数
+	ErrOrderTotalAmountNotPositive = errors.New("order total amount must be positive")
+
+	// ErrCannotModifyNonPendingOrder 无法修改非待处理状态的订单
+	ErrCannotModifyNonPendingOrder = errors.New("can only modify pending orders")
+
+	// ErrItemNotFound 订单项不存在
+	ErrItemNotFound = errors.New("item not found")
+
+	// ErrInvalidOrderStateTransition 无效的订单状态转换
+	ErrInvalidOrderStateTransition = errors.New("invalid order state transition")
+
+	// ErrUserNotActiveForOrder 用户未激活，无法处理订单
+	ErrUserNotActiveForOrder = errors.New("user is not active")
 )
 
 // ============================================================================

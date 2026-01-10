@@ -2,7 +2,6 @@ package order
 
 import (
 	"context"
-	"errors"
 )
 
 // UserChecker User status checker interface
@@ -41,12 +40,12 @@ func (s *DomainService) CanProcessOrder(ctx context.Context, orderID string) (*O
 		return nil, err
 	}
 	if !isActive {
-		return nil, errors.New("user is not active")
+		return nil, ErrUserNotActiveForOrder
 	}
 
 	// Validate order status
 	if order.Status() != StatusPending {
-		return nil, errors.New("only pending orders can be processed")
+		return nil, ErrInvalidOrderStateTransition
 	}
 
 	return order, nil
@@ -66,12 +65,12 @@ func (s *DomainService) ValidateProcessOrder(ctx context.Context, orderID string
 		return err
 	}
 	if !isActive {
-		return errors.New("user is not active")
+		return ErrUserNotActiveForOrder
 	}
 
 	// Validate order status
 	if order.Status() != StatusPending {
-		return errors.New("only pending orders can be processed")
+		return ErrInvalidOrderStateTransition
 	}
 
 	return nil

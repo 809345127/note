@@ -113,7 +113,7 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 		// 5. Insert added items (dirty tracking)
 		for _, item := range o.AddedItems() {
 			itemPO := po.OrderItemPO{
-				ID:               o.ID() + "-" + item.ProductID(),
+				ID:               item.ID(),
 				OrderID:          o.ID(),
 				ProductID:        item.ProductID(),
 				ProductName:      item.ProductName(),
@@ -139,6 +139,11 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 //   - 订单未找到: 返回 order.NewOrderNotFoundError（领域错误，带堆栈）
 //   - 其他数据库错误: 原样返回（基础设施错误，已包含足够信息）
 func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order, error) {
+	// Check if context is already cancelled before making DB call
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	db := r.getDB(ctx)
 	var orderPO po.OrderPO
 
@@ -212,6 +217,7 @@ func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.S
 
 // applySpecification applies a domain specification to a GORM query
 // Uses type switches to handle different specification types
+// DDD Principle: Infrastructure adapts domain specifications to persistence queries
 func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	if spec == nil {
 		return db
@@ -221,10 +227,52 @@ func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specificat
 	switch s := spec.(type) {
 	case shared.AndSpecification[*order.Order]:
 		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
-	// Note: OR and NOT specifications are more complex to implement with GORM
-	// For simplicity in this first implementation, we only support AND
+	case shared.OrSpecification[*order.Order]:
+		// OR: Apply left specification, then chain with Or() for right
+		leftDB := r.applySpecification(db, s.Left)
+		return leftDB.Or(r.applySpecification(db.Session(&gorm.Session{}), s.Right))
+	case shared.NotSpecification[*order.Order]:
+		// NOT: Apply negation of the inner specification
+		return r.applyNotSpecification(db, s.Spec)
 	default:
 		return r.applyConcreteSpecification(db, spec)
+	}
+}
+
+// applyNotSpecification applies negation of a specification
+func (r *OrderRepository) applyNotSpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
+	switch s := spec.(type) {
+	case order.ByUserIDSpecification:
+		return db.Where("user_id != ?", s.UserID)
+	case order.ByStatusSpecification:
+		return db.Where("status != ?", s.Status)
+	case order.ByDateRangeSpecification:
+		// Negate date range: NOT (created >= start AND created <= end)
+		// Becomes: created < start OR created > end
+		if !s.Start.IsZero() && !s.End.IsZero() {
+			return db.Where("created_at < ? OR created_at > ?", s.Start, s.End)
+		} else if !s.Start.IsZero() {
+			return db.Where("created_at < ?", s.Start)
+		} else if !s.End.IsZero() {
+			return db.Where("created_at > ?", s.End)
+		}
+		return db
+	case shared.AndSpecification[*order.Order]:
+		// NOT (A AND B) = NOT A OR NOT B (De Morgan's law)
+		leftSpec := shared.Not(s.Left)
+		rightSpec := shared.Not(s.Right)
+		return r.applySpecification(db, shared.Or(leftSpec, rightSpec))
+	case shared.OrSpecification[*order.Order]:
+		// NOT (A OR B) = NOT A AND NOT B (De Morgan's law)
+		leftSpec := shared.Not(s.Left)
+		rightSpec := shared.Not(s.Right)
+		return r.applySpecification(db, shared.And(leftSpec, rightSpec))
+	case shared.NotSpecification[*order.Order]:
+		// NOT (NOT A) = A (double negation)
+		return r.applySpecification(db, s.Spec)
+	default:
+		// For unknown specification types, return unchanged
+		return db
 	}
 }
 

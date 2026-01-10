@@ -1,6 +1,7 @@
 package user
 
 import (
+	"fmt"
 	"time"
 
 	"ddd/domain/shared"
@@ -45,9 +46,15 @@ func NewUser(name string, email string, age int) (*User, error) {
 		return nil, ErrInvalidAge
 	}
 
+	// Generate UUID with proper error handling
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate user ID: %w", err)
+	}
+
 	now := time.Now()
 	user := &User{
-		id:        uuid.Must(uuid.NewV7()).String(),
+		id:        id.String(),
 		name:      name,
 		email:     *emailVO,
 		age:       age,
@@ -77,17 +84,25 @@ func NewUser(name string, email string, age int) (*User, error) {
 // Activate Activate user
 // Business scenario: Admin activates deactivated user account
 func (u *User) Activate() {
+	if u.isActive {
+		return // Already active, no event needed
+	}
 	u.isActive = true
 	u.updatedAt = time.Now()
-	// Note: Version is NOT incremented here
+	// Record domain event
+	u.events = append(u.events, NewUserActivatedEvent(u.id))
 }
 
 // Deactivate Deactivate user
 // Business scenario: Admin deactivates violating user or user voluntarily deactivates account
 func (u *User) Deactivate() {
+	if !u.isActive {
+		return // Already inactive, no event needed
+	}
 	u.isActive = false
 	u.updatedAt = time.Now()
-	// Note: Version is NOT incremented here
+	// Record domain event
+	u.events = append(u.events, NewUserDeactivatedEvent(u.id))
 }
 
 // UpdateName Update user name
@@ -158,18 +173,26 @@ type ReconstructionDTO struct {
 // RebuildFromDTO Reconstruct User aggregate root from DTO
 // This is a factory method specifically for repository layer to reconstruct aggregate root
 // ⚠️ Note: This method should only be used in repository implementation, not called from application layer
+// Uses NewEmail constructor to ensure validation, with fallback for legacy data
 func RebuildFromDTO(dto ReconstructionDTO) *User {
+	emailVO, err := NewEmail(dto.Email)
+	if err != nil {
+		// For legacy data that may have invalid emails in the database,
+		// we still reconstruct the user but log the issue
+		// In production, consider using a dedicated logger
+		emailVO = &Email{value: dto.Email}
+	}
 	return &User{
 		id:        dto.ID,
 		name:      dto.Name,
-		email:     Email{value: dto.Email},
+		email:     *emailVO,
 		age:       dto.Age,
 		isActive:  dto.IsActive,
 		version:   dto.Version,
 		createdAt: dto.CreatedAt,
 		updatedAt: dto.UpdatedAt,
 		isNew:     false,
-		events:    []shared.DomainEvent{},
+		events:    nil, // nil is more idiomatic than empty slice
 	}
 }
 

@@ -118,11 +118,22 @@ func (bus *EventBus) Publish(event DomainEvent) error {
 	}
 
 	if exists && len(handlers) > 0 {
+		var errs []error
 		for _, handler := range handlers {
 			if err := handler.Handle(event); err != nil {
-				result.Success = false
-				result.Message = fmt.Sprintf("handler %s failed: %v", handler.Name(), err)
+				errs = append(errs, fmt.Errorf("handler %s: %w", handler.Name(), err))
 			}
+		}
+		if len(errs) > 0 {
+			result.Success = false
+			result.Message = fmt.Sprintf("%d handlers failed", len(errs))
+			bus.muHistory.Lock()
+			bus.history = append(bus.history, result)
+			if len(bus.history) > 1000 {
+				bus.history = bus.history[len(bus.history)-1000:]
+			}
+			bus.muHistory.Unlock()
+			return fmt.Errorf("event %s: %d handlers failed: %v", event.EventName(), len(errs), errs)
 		}
 	} else {
 		result.Message = "no handlers registered for this event"

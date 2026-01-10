@@ -12,7 +12,6 @@ package user
 
 import (
 	"context"
-	"errors"
 )
 
 // DomainService User domain service - handles user-related business logic
@@ -38,8 +37,9 @@ func (s *DomainService) CanUserPlaceOrder(ctx context.Context, userID string) (b
 		return false, ErrUserNotActive
 	}
 
-	if !user.CanMakePurchase() {
-		return false, errors.New("user cannot make purchases")
+	// Directly check age since CanMakePurchase already checks isActive
+	if user.Age() < 18 {
+		return false, ErrUserTooYoung
 	}
 
 	return true, nil

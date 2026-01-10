@@ -210,6 +210,7 @@ func (s *ApplicationService) GetUserOrders(ctx context.Context, userID string) (
 type UpdateOrderStatusRequest struct {
 	OrderID string `json:"order_id" binding:"required"`
 	Status  string `json:"status" binding:"required,oneof=PENDING CONFIRMED SHIPPED DELIVERED CANCELLED"`
+	Reason  string `json:"reason"` // Optional reason for cancellation
 }
 
 // UpdateOrderStatus Update order status
@@ -237,7 +238,7 @@ func (s *ApplicationService) UpdateOrderStatus(ctx context.Context, req UpdateOr
 				return err
 			}
 		case order.StatusCancelled:
-			if err := o.Cancel(); err != nil {
+			if err := o.Cancel(req.Reason); err != nil {
 				return err
 			}
 		default:

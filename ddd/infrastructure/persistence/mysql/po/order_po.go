@@ -61,7 +61,7 @@ func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 	itemPOs := make([]OrderItemPO, len(items))
 	for i, item := range items {
 		itemPOs[i] = OrderItemPO{
-			ID:               o.ID() + "-" + item.ProductID(),
+			ID:               item.ID(),  // Use domain object's ID for consistency
 			OrderID:          o.ID(),
 			ProductID:        item.ProductID(),
 			ProductName:      item.ProductName(),

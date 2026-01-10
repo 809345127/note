@@ -42,12 +42,13 @@ func NewRouter(
 	engine := gin.New()
 
 	// Add middleware (order is important)
-	engine.Use(middleware.RequestIDMiddleware()) // 1. Generate request ID first
-	engine.Use(middleware.RecoveryMiddleware())  // 2. Recovery middleware
-	engine.Use(middleware.LoggingMiddleware())   // 3. Logging middleware
+	engine.Use(middleware.RequestIDMiddleware())              // 1. Generate request ID first
+	engine.Use(middleware.RecoveryMiddleware())               // 2. Recovery middleware
+	engine.Use(middleware.LoggingMiddleware())                // 3. Logging middleware
+	engine.Use(middleware.MaxBodySizeMiddleware(middleware.DefaultMaxBodySize)) // 4. Request body size limit (DoS protection)
 
 	// CORS middleware with config
-	engine.Use(middleware.CORSMiddleware(&cfg.CORS)) // 4. CORS
+	engine.Use(middleware.CORSMiddleware(&cfg.CORS)) // 5. CORS
 
 	// Apply custom middleware
 	for _, m := range middlewares {

@@ -1,99 +1,70 @@
-# DDD Example Project - Go Implementation
+# Go DDD 评审基线项目
 
-A Domain-Driven Design example project in Go, demonstrating DDD patterns through user and order management.
+面向生产实践的参考项目，聚焦：
 
-## Documentation
+- Go + Gin + GORM + MySQL
+- DDD 分层架构
+- 代码评审规范与反模式示例
 
-| Document | Description |
-|----------|-------------|
-| **This file** | Quick start and API examples |
-| [DDD_CONCEPTS.md](DDD_CONCEPTS.md) | DDD theory: concepts, principles, best practices |
-| [DDD_GUIDE.md](DDD_GUIDE.md) | Implementation guide: code examples, patterns |
+本仓库用于团队内部工程规范参考，强调“可运行、可落地、可评审”。
 
-## Quick Start
+## 包含内容
 
-### Requirements
+1. 主服务基线（`api/`、`application/`、`domain/`、`infrastructure/`）
+2. 可选 Outbox Worker 运行时（`cmd/worker`）
+3. 最佳实践与评审文档（`docs/best-practices/`、`docs/review/`）
+4. 最小可运行示例（`examples/minimal-service/`）
 
-- Go 1.24+
+## 快速开始
 
-### Run
+### 1）运行主服务
+
+前置条件：
+
+- 已准备 MySQL，并由外部 DDL 系统创建好表（`users`、`orders`、`order_items`、`outbox_events`）
 
 ```bash
-go mod download
 go run main.go
-# Or specify port: go run main.go -port 8080
 ```
 
-## API Examples
+关键配置：
 
-### Health Check
+- outbox 在学习基线中固定启用（无需配置）
+
+### 2）运行 Outbox Worker（可选）
+
 ```bash
-curl http://localhost:8080/api/v1/health
+go run ./cmd/worker
 ```
 
-### Create User
+仅当 `worker.enabled=true` 时，Worker 才会工作。
+
+### 3）运行最小示例（无需 MySQL）
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Zhang San", "email": "zhangsan@example.com", "age": 25}'
+go run ./examples/minimal-service/cmd/server
 ```
 
-### Get Users
+接口：
+
+- `GET /api/v1/health`
+- `POST /api/v1/tasks`
+- `GET /api/v1/tasks`
+
+## 评审基线文档
+
+- `docs/best-practices/ddd.md`
+- `docs/best-practices/gin.md`
+- `docs/best-practices/gorm-mysql.md`
+- `docs/review/checklist.md`
+- `docs/anti-patterns/anti-patterns.md`
+
+## 本地质量检查
+
 ```bash
-curl http://localhost:8080/api/v1/users
-curl http://localhost:8080/api/v1/users/user-1
+./scripts/check.sh
 ```
 
-### Create Order
-```bash
-curl -X POST http://localhost:8080/api/v1/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "user-1",
-    "items": [{
-      "product_id": "prod-1",
-      "product_name": "iPhone 15",
-      "quantity": 1,
-      "unit_price": 699900,
-      "currency": "CNY"
-    }]
-  }'
-```
+## 历史 DDD 理论资料
 
-### Get User Orders
-```bash
-curl http://localhost:8080/api/v1/orders/user/user-1
-```
-
-## Project Structure
-
-```
-ddd/
-├── api/                    # Presentation Layer
-│   ├── router.go
-│   ├── health/
-│   ├── user/
-│   ├── order/
-│   ├── middleware/
-│   └── response/
-├── application/            # Application Layer
-│   ├── user/
-│   └── order/
-├── domain/                 # Domain Layer (Core)
-│   ├── shared/
-│   ├── user/
-│   └── order/
-├── infrastructure/         # Infrastructure Layer
-│   └── persistence/
-│       └── mysql/
-├── cmd/
-└── main.go
-```
-
-## Test Data
-
-Pre-loaded on startup:
-
-**Users**: user-1 (Zhang San), user-2 (Li Si), user-3 (Wang Wu)
-
-**Orders**: order-1 (shipped), order-2 (confirmed), order-3 (pending)
+已迁移至 `docs/ddd-reference/`。

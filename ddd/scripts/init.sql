@@ -1,7 +1,7 @@
 -- DDD Example Database Initialization Script
 -- This script is executed when MySQL container starts for the first time
 
--- Create tables (GORM will auto-migrate, but this ensures structure exists)
+-- Create tables (managed by external DDL in production)
 
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(64) PRIMARY KEY,

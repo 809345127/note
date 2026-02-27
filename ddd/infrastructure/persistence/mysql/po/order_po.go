@@ -7,12 +7,9 @@ import (
 	"ddd/domain/shared"
 )
 
-// OrderPO Order persistence object
-// Note: Only used for database mapping, does not contain any business logic
-// Defining GORM associations is prohibited here
 type OrderPO struct {
 	ID            string    `gorm:"primaryKey;size:64"`
-	UserID        string    `gorm:"size:64;index;not null"` // Only store ID, no association with User
+	UserID        string    `gorm:"size:64;index;not null"`
 	Status        string    `gorm:"size:20;not null"`
 	TotalAmount   int64     `gorm:"not null"`
 	TotalCurrency string    `gorm:"size:3;not null"`
@@ -21,15 +18,13 @@ type OrderPO struct {
 	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
 }
 
-// TableName Specify table name
 func (OrderPO) TableName() string {
 	return "orders"
 }
 
-// OrderItemPO Order item persistence object
 type OrderItemPO struct {
 	ID               string `gorm:"primaryKey;size:128"`
-	OrderID          string `gorm:"size:64;index;not null"` // Only store ID, no GORM association
+	OrderID          string `gorm:"size:64;index;not null"`
 	ProductID        string `gorm:"size:64;not null"`
 	ProductName      string `gorm:"size:255;not null"`
 	Quantity         int    `gorm:"not null"`
@@ -39,12 +34,9 @@ type OrderItemPO struct {
 	SubtotalCurrency string `gorm:"size:3;not null"`
 }
 
-// TableName Specify table name
 func (OrderItemPO) TableName() string {
 	return "order_items"
 }
-
-// FromOrderDomain Convert domain model to persistence object
 func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 	orderPO := &OrderPO{
 		ID:            o.ID(),
@@ -61,7 +53,7 @@ func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 	itemPOs := make([]OrderItemPO, len(items))
 	for i, item := range items {
 		itemPOs[i] = OrderItemPO{
-			ID:               item.ID(),  // Use domain object's ID for consistency
+			ID:               item.ID(),
 			OrderID:          o.ID(),
 			ProductID:        item.ProductID(),
 			ProductName:      item.ProductName(),
@@ -75,10 +67,7 @@ func FromOrderDomain(o *order.Order) (*OrderPO, []OrderItemPO) {
 
 	return orderPO, itemPOs
 }
-
-// ToDomain Convert persistence object to domain model
 func (po *OrderPO) ToDomain(itemPOs []OrderItemPO) *order.Order {
-	// Convert order items
 	items := make([]order.OrderItem, len(itemPOs))
 	for i, itemPO := range itemPOs {
 		items[i] = order.RebuildItemFromDTO(order.ItemReconstructionDTO{

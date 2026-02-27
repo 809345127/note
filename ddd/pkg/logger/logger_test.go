@@ -12,17 +12,12 @@ import (
 )
 
 func TestNilLoggerSafety(t *testing.T) {
-	// Reset logger to nil for testing
 	log = nil
 	atomLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-
-	// These should not panic
 	Debug("test debug")
 	Info("test info")
 	Warn("test warn")
 	Error("test error")
-
-	// With methods should return no-op logger
 	testLogger := With(zap.String("key", "value"))
 	if testLogger == nil {
 		t.Error("With() returned nil logger")
@@ -47,7 +42,7 @@ func TestNilLoggerSafety(t *testing.T) {
 func TestDevelopmentConfig(t *testing.T) {
 	devConfig := &config.LogConfig{
 		Level:    "debug",
-		Format:   "", // Use default based on environment
+		Format:   "",
 		Output:   "stdout",
 		FilePath: "logs/dev.log",
 	}
@@ -89,25 +84,16 @@ func TestDynamicLogLevel(t *testing.T) {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer Sync()
-
-	// Debug should be visible
 	Debug("This debug message should be visible")
-
-	// Update to info level
 	UpdateLevel("info")
-	// Debug should not be visible (no output expected)
 	Debug("This debug message should NOT be visible")
-	// Info should still be visible
 	Info("Info message should still be visible")
-
-	// Reset back to debug
 	UpdateLevel("debug")
 
 	t.Log("✓ Dynamic log level tests passed")
 }
 
 func TestFileOutput(t *testing.T) {
-	// Clean up test file if exists
 	testFile := "logs/test_file.log"
 	os.Remove(testFile)
 	os.MkdirAll("logs", 0755)
@@ -127,13 +113,9 @@ func TestFileOutput(t *testing.T) {
 
 	Info("File logger initialized")
 	Error("Error message to file")
-
-	// Generate some log entries
 	for i := 0; i < 10; i++ {
 		Info("Log entry for test", zap.Int("entry", i))
 	}
-
-	// Verify file exists and has content
 	fileInfo, err := os.Stat(testFile)
 	if err != nil {
 		t.Fatalf("Log file not created: %v", err)
@@ -149,7 +131,7 @@ func TestFileOutput(t *testing.T) {
 func TestProductionConfig(t *testing.T) {
 	prodConfig := &config.LogConfig{
 		Level:  "info",
-		Format: "", // Use default based on environment
+		Format: "",
 		Output: "stdout",
 	}
 

@@ -17,11 +17,9 @@ import (
 )
 
 const (
-	// DefaultMaxBodySize is the default maximum body size (1MB)
 	DefaultMaxBodySize = 1 << 20 // 1MB
 )
 
-// MaxBodySizeMiddleware limits request body size to prevent DoS attacks
 func MaxBodySizeMiddleware(maxBytes int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
@@ -30,11 +28,9 @@ func MaxBodySizeMiddleware(maxBytes int64) gin.HandlerFunc {
 }
 
 const (
-	// RequestIDHeader Request ID header
 	RequestIDHeader = "X-Request-ID"
 )
 
-// RequestIDMiddleware Request ID middleware
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader(RequestIDHeader)
@@ -48,32 +44,20 @@ func RequestIDMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// LoggingMiddleware Logging middleware
 func LoggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
 		raw := c.Request.URL.RawQuery
-
-		// Get request ID
 		requestID, _ := c.Get(response.RequestIDKey)
 		reqID, _ := requestID.(string)
-
-		// Create logger with request ID
 		log := logger.WithRequestID(reqID)
 
 		c.Next()
-
-		// Calculate latency
 		latency := time.Since(start)
-
-		// Update path with query if needed
 		if raw != "" {
 			path = path + "?" + raw
 		}
-
-		// Prepare log fields
 		fields := []zap.Field{
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
@@ -82,8 +66,6 @@ func LoggingMiddleware() gin.HandlerFunc {
 			zap.String("client_ip", c.ClientIP()),
 			zap.Int("body_size", c.Writer.Size()),
 		}
-
-		// Log based on status code
 		switch {
 		case c.Writer.Status() >= 500:
 			log.Error("HTTP Request", fields...)
@@ -94,22 +76,16 @@ func LoggingMiddleware() gin.HandlerFunc {
 		}
 	}
 }
-
-// RecoveryMiddleware Recovery middleware (bug-fixed version)
 func RecoveryMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				requestID, _ := c.Get(response.RequestIDKey)
 				reqID, _ := requestID.(string)
-
-				// Log panic
 				logger.Error("Panic recovered",
 					zap.String("request_id", reqID),
 					zap.Any("error", recovered),
 					zap.String("path", c.Request.URL.Path))
-
-				// Return 500 error (call response method only once)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, response.Response{
 					Success:   false,
 					Error:     "internal server error",
@@ -123,13 +99,9 @@ func RecoveryMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// CORSMiddleware CORS middleware (configurable version)
 func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-
-		// Check if origin is allowed
 		allowed := false
 		for _, o := range cfg.AllowOrigins {
 			if o == "*" || o == origin {
@@ -141,13 +113,11 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 		if allowed {
 			c.Header("Access-Control-Allow-Origin", origin)
 		}
-		c.Header("Vary", "Origin") // Required for proper CDN/proxy caching
+		c.Header("Vary", "Origin")
 
 		if cfg.AllowCredentials {
 			c.Header("Access-Control-Allow-Credentials", "true")
 		}
-
-		// Build allowed methods and headers
 		methods := ""
 		for i, m := range cfg.AllowMethods {
 			if i > 0 {
@@ -177,40 +147,32 @@ func CORSMiddleware(cfg *config.CORSConfig) gin.HandlerFunc {
 	}
 }
 
-// limiterWithTime wraps a rate limiter with its creation time for cleanup
 type limiterWithTime struct {
-	limiter     *rate.Limiter
-	createdAt   time.Time
+	limiter   *rate.Limiter
+	createdAt time.Time
 }
-
-// RateLimiter Rate limiter with automatic cleanup
 type RateLimiter struct {
 	limiters        sync.Map
 	rate            rate.Limit
 	burst           int
 	lastCleanup     time.Time
-	mu              sync.Mutex
 	cleanupInterval time.Duration
-	maxAge          time.Duration // Max age for a limiter before cleanup
-	stopCh          chan struct{} // Channel to signal cleanup goroutine to stop
+	maxAge          time.Duration
+	stopCh          chan struct{}
 }
 
-// NewRateLimiter Create rate limiter with automatic cleanup
 func NewRateLimiter(r float64, burst int) *RateLimiter {
 	rl := &RateLimiter{
 		rate:            rate.Limit(r),
 		burst:           burst,
 		cleanupInterval: 5 * time.Minute,
-		maxAge:          10 * time.Minute, // Limiter expires after 10 minutes
+		maxAge:          10 * time.Minute,
 		lastCleanup:     time.Now(),
 		stopCh:          make(chan struct{}),
 	}
-	// Start cleanup goroutine
 	go rl.cleanupLoop()
 	return rl
 }
-
-// cleanupLoop Periodically cleans up old limiters
 func (rl *RateLimiter) cleanupLoop() {
 	ticker := time.NewTicker(rl.cleanupInterval)
 	defer ticker.Stop()
@@ -224,23 +186,15 @@ func (rl *RateLimiter) cleanupLoop() {
 		}
 	}
 }
-
-// Stop Stops the cleanup goroutine
-// Should be called during server shutdown
 func (rl *RateLimiter) Stop() {
 	close(rl.stopCh)
 }
-
-// cleanup Remove limiters that haven't been used recently
 func (rl *RateLimiter) cleanup() {
-	// Only cleanup if enough time has passed
 	if time.Since(rl.lastCleanup) < rl.cleanupInterval {
 		return
 	}
 
 	rl.lastCleanup = time.Now()
-
-	// Iterate through all limiters and remove old ones
 	now := time.Now()
 	rl.limiters.Range(func(key, value interface{}) bool {
 		entry := value.(*limiterWithTime)
@@ -250,22 +204,17 @@ func (rl *RateLimiter) cleanup() {
 		return true
 	})
 }
-
-// getLimiter Get or create rate limiter for IP
 func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	entry := &limiterWithTime{
 		limiter:   rate.NewLimiter(rl.rate, rl.burst),
 		createdAt: time.Now(),
 	}
-	// Use LoadOrStore to prevent race condition
 	actual, loaded := rl.limiters.LoadOrStore(ip, entry)
 	if loaded {
 		return actual.(*limiterWithTime).limiter
 	}
 	return entry.limiter
 }
-
-// RateLimitMiddleware Rate limiting middleware
 func RateLimitMiddleware(cfg *config.RateLimitConfig) gin.HandlerFunc {
 	if !cfg.Enabled {
 		return func(c *gin.Context) {

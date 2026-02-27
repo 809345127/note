@@ -46,7 +46,10 @@
       "Bash(lsof:*)",
       "Bash(pgrep:*)",
       "Bash(./test_api.sh:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(claude config:*)",
+      "Bash(claude mcp:*)",
+      "Bash(docker start:*)"
     ],
     "deny": [],
     "ask": []

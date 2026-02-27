@@ -1,13 +1,14 @@
 app:
   name: ddd-example
   version: 1.0.0
-  env: development  # development, staging, production
+  env: dev  # dev, stg, prod
 
 server:
   port: "8080"
   read_timeout: 30s
   write_timeout: 30s
   shutdown_timeout: 10s
+  trusted_proxies: [] # e.g. ["127.0.0.1", "10.0.0.0/8"]
   rate_limit:
     enabled: true
     rate: 100      # Requests per second
@@ -15,13 +16,30 @@ server:
 
 database:
   host: localhost
-  port: "3306"
+  port: "3307"
   username: root
-  password: "123456"
+  password: ""
   database: ddd_example
+  log_level: warn # debug, warn, error, silent
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
+  retry:
+    enabled: true
+    max_attempts: 3
+    initial_delay: 100ms
+    max_delay: 2s
+    backoff_factor: 2.0
+    jitter_enabled: true
+    retry_on_concurrent_modification: true
+    retry_on_deadlock: true
+    retry_on_lock_timeout: true
+
+worker:
+  enabled: false
+  poll_interval: 3s
+  batch_size: 100
+  max_retries: 5
 
 log:
   level: debug     # debug, info, warn, error

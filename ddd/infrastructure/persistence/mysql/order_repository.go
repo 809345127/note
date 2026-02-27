@@ -12,19 +12,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// OrderRepository MySQL/GORM implementation of order repository
-// DDD principle: Repository is only responsible for persistence of aggregate roots, not event publishing
-// GORM usage specification: Association features are prohibited to maintain DDD aggregate boundaries
 type OrderRepository struct {
 	db *gorm.DB
 }
 
-// NewOrderRepository Create order repository
 func NewOrderRepository(db *gorm.DB) *OrderRepository {
 	return &OrderRepository{db: db}
 }
 
-// getDB returns the transaction from context if available, otherwise the default db
 func (r *OrderRepository) getDB(ctx context.Context) *gorm.DB {
 	if tx := persistence.TxFromContext(ctx); tx != nil {
 		return tx
@@ -32,32 +27,19 @@ func (r *OrderRepository) getDB(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
-// Save Save order (create or update)
-// Note: Manually manage saving of orders and order items, do not use GORM associations
-// When called within UoW.Execute(), it uses the transaction from context
-// When called standalone, it creates its own transaction for atomicity
-// Uses dirty tracking for efficient updates and optimistic locking for concurrency control
 func (r *OrderRepository) Save(ctx context.Context, o *order.Order) error {
-	// Check if we're already in a UoW transaction
 	if tx := persistence.TxFromContext(ctx); tx != nil {
-		// Use the existing transaction from UoW
 		return r.saveWithTx(tx, o)
 	}
-
-	// No UoW transaction - create our own for atomicity
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return r.saveWithTx(tx, o)
 	})
 }
 
-// saveWithTx performs the actual save operations within a transaction
-// Uses dirty tracking: only inserts new items and deletes removed items
-// Uses optimistic locking: checks version to prevent concurrent modification
 func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 	orderPO, allItemPOs := po.FromOrderDomain(o)
 
 	if o.IsNew() {
-		// New aggregate: insert order and all items
 		if err := tx.Create(orderPO).Error; err != nil {
 			return err
 		}
@@ -67,50 +49,38 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 			}
 		}
 	} else {
-		// Existing aggregate: use optimistic locking and dirty tracking
-
-		// 1. Query current version from database to ensure we use the correct version for WHERE clause
-		// DDD Principle: The repository is responsible for version synchronization between
-		// the domain model and the persistence layer
-		var currentOrderPO po.OrderPO
-		if err := tx.First(&currentOrderPO, "id = ?", o.ID()).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return order.ErrOrderNotFound
-			}
-			return err
-		}
-		dbVersion := currentOrderPO.Version
-
-		// 2. Update order with optimistic lock check using database version
+		expectedVersion := o.Version()
 		result := tx.Model(&po.OrderPO{}).
-			Where("id = ? AND version = ?", o.ID(), dbVersion).
+			Where("id = ? AND version = ?", o.ID(), expectedVersion).
 			Updates(map[string]any{
 				"status":         orderPO.Status,
 				"total_amount":   orderPO.TotalAmount,
 				"total_currency": orderPO.TotalCurrency,
-				"version":        dbVersion + 1,
+				"version":        expectedVersion + 1,
 				"updated_at":     orderPO.UpdatedAt,
 			})
-
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return order.ErrConcurrentModification
+			var count int64
+			if err := tx.Model(&po.OrderPO{}).Where("id = ?", o.ID()).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return order.NewOrderNotFoundError(o.ID())
+			}
+			return order.NewConcurrentModificationError(o.ID())
 		}
 
-		// 3. Notify the aggregate that persistence was successful
-		// DDD Principle: The aggregate controls its own version increment, triggered by persistence
 		o.IncrementVersionForSave()
 
-		// 4. Delete removed items (dirty tracking)
 		for _, item := range o.RemovedItems() {
 			if err := tx.Delete(&po.OrderItemPO{}, "id = ?", item.ID()).Error; err != nil {
 				return err
 			}
 		}
 
-		// 5. Insert added items (dirty tracking)
 		for _, item := range o.AddedItems() {
 			itemPO := po.OrderItemPO{
 				ID:               item.ID(),
@@ -129,54 +99,38 @@ func (r *OrderRepository) saveWithTx(tx *gorm.DB, o *order.Order) error {
 		}
 	}
 
-	// Clear dirty tracking after successful save
 	o.ClearDirtyTracking()
 	return nil
 }
 
-// FindByID Find order by ID
-// 错误处理:
-//   - 订单未找到: 返回 order.NewOrderNotFoundError（领域错误，带堆栈）
-//   - 其他数据库错误: 原样返回（基础设施错误，已包含足够信息）
 func (r *OrderRepository) FindByID(ctx context.Context, id string) (*order.Order, error) {
-	// Check if context is already cancelled before making DB call
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
 	db := r.getDB(ctx)
 	var orderPO po.OrderPO
-
-	// Query order
 	result := db.First(&orderPO, "id = ?", id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			// 领域错误: 使用带堆栈的构造函数
-			// 堆栈会从这里开始捕获: FindByID -> NewOrderNotFoundError
 			return nil, order.NewOrderNotFoundError(id)
 		}
-		// 基础设施错误: 直接返回，GORM 错误已包含 SQL、连接等信息
 		return nil, result.Error
 	}
 
-	// Manually query order items (do not use GORM's Preload to keep aggregate boundaries clear)
 	var itemPOs []po.OrderItemPO
 	if err := db.Where("order_id = ?", id).Find(&itemPOs).Error; err != nil {
 		return nil, err
 	}
 
-	// Rebuild to ensure a fresh domain object (important for retry scenarios)
-	o := orderPO.ToDomain(itemPOs)
-	return o, nil
+	return orderPO.ToDomain(itemPOs), nil
 }
 
-// FindByUserID Find order list by user ID
 func (r *OrderRepository) FindByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
 	spec := order.ByUserIDSpecification{UserID: userID}
 	return r.FindBySpecification(ctx, spec)
 }
 
-// FindDeliveredOrdersByUserID Find delivered orders by user ID
 func (r *OrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userID string) ([]*order.Order, error) {
 	spec := shared.And(
 		order.ByUserIDSpecification{UserID: userID},
@@ -185,61 +139,61 @@ func (r *OrderRepository) FindDeliveredOrdersByUserID(ctx context.Context, userI
 	return r.FindBySpecification(ctx, spec)
 }
 
-// FindBySpecification Find orders by specification
-// Implements the domain.Repository interface for flexible query composition
 func (r *OrderRepository) FindBySpecification(ctx context.Context, spec shared.Specification[*order.Order]) ([]*order.Order, error) {
-	db := r.getDB(ctx)
-
-	// Apply specification to query
-	db = r.applySpecification(db, spec)
+	baseDB := r.getDB(ctx)
+	db := r.applySpecification(baseDB, spec)
 	if db.Error != nil {
 		return nil, db.Error
 	}
 
-	// Execute query with ordering
 	var orderPOs []po.OrderPO
 	if err := db.Order("created_at DESC").Find(&orderPOs).Error; err != nil {
 		return nil, err
 	}
-
-	// Batch query order items
-	orders := make([]*order.Order, len(orderPOs))
-	for i, orderPO := range orderPOs {
-		var itemPOs []po.OrderItemPO
-		if err := db.Where("order_id = ?", orderPO.ID).Find(&itemPOs).Error; err != nil {
-			return nil, err
-		}
-		orders[i] = orderPO.ToDomain(itemPOs)
+	if len(orderPOs) == 0 {
+		return []*order.Order{}, nil
 	}
 
+	orderIDs := make([]string, 0, len(orderPOs))
+	for _, orderPO := range orderPOs {
+		orderIDs = append(orderIDs, orderPO.ID)
+	}
+
+	var itemPOs []po.OrderItemPO
+	if err := baseDB.Model(&po.OrderItemPO{}).Where("order_id IN ?", orderIDs).Find(&itemPOs).Error; err != nil {
+		return nil, err
+	}
+
+	itemMap := make(map[string][]po.OrderItemPO, len(orderPOs))
+	for _, itemPO := range itemPOs {
+		itemMap[itemPO.OrderID] = append(itemMap[itemPO.OrderID], itemPO)
+	}
+
+	orders := make([]*order.Order, len(orderPOs))
+	for i, orderPO := range orderPOs {
+		orders[i] = orderPO.ToDomain(itemMap[orderPO.ID])
+	}
 	return orders, nil
 }
 
-// applySpecification applies a domain specification to a GORM query
-// Uses type switches to handle different specification types
-// DDD Principle: Infrastructure adapts domain specifications to persistence queries
 func (r *OrderRepository) applySpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	if spec == nil {
 		return db
 	}
 
-	// Handle composite specifications
 	switch s := spec.(type) {
 	case shared.AndSpecification[*order.Order]:
 		return r.applySpecification(r.applySpecification(db, s.Left), s.Right)
 	case shared.OrSpecification[*order.Order]:
-		// OR: Apply left specification, then chain with Or() for right
 		leftDB := r.applySpecification(db, s.Left)
 		return leftDB.Or(r.applySpecification(db.Session(&gorm.Session{}), s.Right))
 	case shared.NotSpecification[*order.Order]:
-		// NOT: Apply negation of the inner specification
 		return r.applyNotSpecification(db, s.Spec)
 	default:
 		return r.applyConcreteSpecification(db, spec)
 	}
 }
 
-// applyNotSpecification applies negation of a specification
 func (r *OrderRepository) applyNotSpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	switch s := spec.(type) {
 	case order.ByUserIDSpecification:
@@ -247,36 +201,31 @@ func (r *OrderRepository) applyNotSpecification(db *gorm.DB, spec shared.Specifi
 	case order.ByStatusSpecification:
 		return db.Where("status != ?", s.Status)
 	case order.ByDateRangeSpecification:
-		// Negate date range: NOT (created >= start AND created <= end)
-		// Becomes: created < start OR created > end
 		if !s.Start.IsZero() && !s.End.IsZero() {
 			return db.Where("created_at < ? OR created_at > ?", s.Start, s.End)
-		} else if !s.Start.IsZero() {
+		}
+		if !s.Start.IsZero() {
 			return db.Where("created_at < ?", s.Start)
-		} else if !s.End.IsZero() {
+		}
+		if !s.End.IsZero() {
 			return db.Where("created_at > ?", s.End)
 		}
 		return db
 	case shared.AndSpecification[*order.Order]:
-		// NOT (A AND B) = NOT A OR NOT B (De Morgan's law)
 		leftSpec := shared.Not(s.Left)
 		rightSpec := shared.Not(s.Right)
 		return r.applySpecification(db, shared.Or(leftSpec, rightSpec))
 	case shared.OrSpecification[*order.Order]:
-		// NOT (A OR B) = NOT A AND NOT B (De Morgan's law)
 		leftSpec := shared.Not(s.Left)
 		rightSpec := shared.Not(s.Right)
 		return r.applySpecification(db, shared.And(leftSpec, rightSpec))
 	case shared.NotSpecification[*order.Order]:
-		// NOT (NOT A) = A (double negation)
 		return r.applySpecification(db, s.Spec)
 	default:
-		// For unknown specification types, return unchanged
 		return db
 	}
 }
 
-// applyConcreteSpecification applies concrete domain specifications
 func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Specification[*order.Order]) *gorm.DB {
 	switch s := spec.(type) {
 	case order.ByUserIDSpecification:
@@ -284,7 +233,6 @@ func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Sp
 	case order.ByStatusSpecification:
 		return db.Where("status = ?", s.Status)
 	case order.ByDateRangeSpecification:
-		// Handle optional start and end dates
 		if !s.Start.IsZero() {
 			db = db.Where("created_at >= ?", s.Start)
 		}
@@ -293,28 +241,22 @@ func (r *OrderRepository) applyConcreteSpecification(db *gorm.DB, spec shared.Sp
 		}
 		return db
 	default:
-		// Unknown specification type - return unchanged
 		return db
 	}
 }
 
-// Remove Delete order (logical deletion: mark as cancelled)
-// DDD principle: Logical deletion is recommended over physical deletion to preserve business history
 func (r *OrderRepository) Remove(ctx context.Context, id string) error {
 	result := r.getDB(ctx).
 		Model(&po.OrderPO{}).
 		Where("id = ?", id).
 		Update("status", string(order.StatusCancelled))
-
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
 		return order.ErrOrderNotFound
 	}
-
 	return nil
 }
 
-// Compile-time interface implementation check
 var _ order.Repository = (*OrderRepository)(nil)

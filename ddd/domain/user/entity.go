@@ -9,29 +9,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// User User aggregate root
-// User is a simple aggregate root with no internal entities
-// Unlike Order, User aggregate only contains User itself, no child entities
-//
-// Aggregate root characteristics:
-// 1. All fields are private, behaviors exposed through methods
-// 2. Contains version number for optimistic locking
-// 3. Contains event list for recording domain events
+// User 是用户聚合根。
 type User struct {
 	id        string
 	name      string
 	email     Email
 	age       int
 	isActive  bool
-	version   int // Optimistic lock version number
+	version   int
 	createdAt time.Time
 	updatedAt time.Time
-	isNew     bool // Tracks if aggregate is newly created (not loaded from DB)
+	isNew     bool
 
 	events []shared.DomainEvent
 }
 
-// NewUser Create new user entity
 func NewUser(name string, email string, age int) (*User, error) {
 	if name == "" {
 		return nil, ErrInvalidName
@@ -41,19 +33,17 @@ func NewUser(name string, email string, age int) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if age < 0 || age > 150 {
 		return nil, ErrInvalidAge
 	}
 
-	// Generate UUID with proper error handling
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate user ID: %w", err)
 	}
 
 	now := time.Now()
-	user := &User{
+	u := &User{
 		id:        id.String(),
 		name:      name,
 		email:     *emailVO,
@@ -65,78 +55,46 @@ func NewUser(name string, email string, age int) (*User, error) {
 		isNew:     true,
 		events:    make([]shared.DomainEvent, 0),
 	}
-
-	// Record domain event
-	user.events = append(user.events, NewUserCreatedEvent(user.id, user.name, user.email.Value()))
-
-	return user, nil
+	u.events = append(u.events, NewUserCreatedEvent(u.id, u.name, u.email.Value()))
+	return u, nil
 }
 
-// ============================================================================
-// Domain Behavior Methods
-// ============================================================================
-//
-// DDD Principle: Entity state changes through behavior methods, not direct field modification
-// Behavior methods encapsulate business rules and automatically maintain version numbers
-// Note: Version is NOT incremented here - it will be incremented after successful save
-// via IncrementVersionForSave() method
-
-// Activate Activate user
-// Business scenario: Admin activates deactivated user account
 func (u *User) Activate() {
 	if u.isActive {
-		return // Already active, no event needed
+		return
 	}
 	u.isActive = true
 	u.updatedAt = time.Now()
-	// Record domain event
 	u.events = append(u.events, NewUserActivatedEvent(u.id))
 }
 
-// Deactivate Deactivate user
-// Business scenario: Admin deactivates violating user or user voluntarily deactivates account
 func (u *User) Deactivate() {
 	if !u.isActive {
-		return // Already inactive, no event needed
+		return
 	}
 	u.isActive = false
 	u.updatedAt = time.Now()
-	// Record domain event
 	u.events = append(u.events, NewUserDeactivatedEvent(u.id))
 }
 
-// UpdateName Update user name
-// Includes business rule validation: name cannot be empty
 func (u *User) UpdateName(name string) error {
 	if name == "" {
 		return ErrInvalidName
 	}
 	u.name = name
 	u.updatedAt = time.Now()
-	// Note: Version is NOT incremented here
 	return nil
 }
 
-// IncrementVersionForSave Increments the version after successful persistence
-// This method is called by the repository after a successful save
-// DDD Principle: Version management is controlled by the aggregate, triggered by persistence
 func (u *User) IncrementVersionForSave() {
 	u.version++
 	u.updatedAt = time.Now()
 }
 
-// CanMakePurchase Check if user can make purchase
-// This is a business rule query method that encapsulates the business definition of "can purchase"
-// Business rule: User must be active and at least 18 years old
 func (u *User) CanMakePurchase() bool {
 	return u.isActive && u.age >= 18
 }
 
-// ============================================================================
-// Getters - Read-only Accessors
-// ============================================================================
-//
-// DDD Principle: Fields are private, exposed through getters for read-only access
 func (u *User) ID() string           { return u.id }
 func (u *User) Name() string         { return u.name }
 func (u *User) Email() Email         { return u.email }
@@ -148,7 +106,6 @@ func (u *User) UpdatedAt() time.Time { return u.updatedAt }
 func (u *User) IsNew() bool          { return u.isNew }
 func (u *User) ClearNewFlag()        { u.isNew = false }
 
-// PullEvents Get and clear aggregate root's event list
 func (u *User) PullEvents() []shared.DomainEvent {
 	events := make([]shared.DomainEvent, len(u.events))
 	copy(events, u.events)
@@ -156,9 +113,7 @@ func (u *User) PullEvents() []shared.DomainEvent {
 	return events
 }
 
-// ReconstructionDTO User reconstruction data transfer object
-// Limited to repository layer usage, for reconstructing User aggregate root from database
-// ⚠️ Note: This DTO should only be used in repository implementation, not called from application layer
+// ReconstructionDTO 仅供仓储层重建聚合使用。
 type ReconstructionDTO struct {
 	ID        string
 	Name      string
@@ -170,16 +125,10 @@ type ReconstructionDTO struct {
 	UpdatedAt time.Time
 }
 
-// RebuildFromDTO Reconstruct User aggregate root from DTO
-// This is a factory method specifically for repository layer to reconstruct aggregate root
-// ⚠️ Note: This method should only be used in repository implementation, not called from application layer
-// Uses NewEmail constructor to ensure validation, with fallback for legacy data
+// RebuildFromDTO 仅供仓储层调用。
 func RebuildFromDTO(dto ReconstructionDTO) *User {
 	emailVO, err := NewEmail(dto.Email)
 	if err != nil {
-		// For legacy data that may have invalid emails in the database,
-		// we still reconstruct the user but log the issue
-		// In production, consider using a dedicated logger
 		emailVO = &Email{value: dto.Email}
 	}
 	return &User{
@@ -192,9 +141,8 @@ func RebuildFromDTO(dto ReconstructionDTO) *User {
 		createdAt: dto.CreatedAt,
 		updatedAt: dto.UpdatedAt,
 		isNew:     false,
-		events:    nil, // nil is more idiomatic than empty slice
+		events:    nil,
 	}
 }
 
-// Compile-time check that User implements AggregateRoot interface
 var _ shared.AggregateRoot = (*User)(nil)

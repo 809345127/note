@@ -6,46 +6,24 @@ import (
 	"time"
 )
 
-// DomainEvent Domain Event Interface
 type DomainEvent interface {
 	EventName() string
 	OccurredOn() time.Time
 	GetAggregateID() string
 }
-
-// DomainEventPublisher Domain Event Publisher Interface
-// DDD principle: Domain layer defines interfaces, infrastructure layer provides implementation
-// Application layer publishes events through interfaces, not dependent on specific implementation
 type DomainEventPublisher interface {
-	// Publish Publish domain event
 	Publish(event DomainEvent) error
-
-	// Subscribe Subscribe to specific types of events
 	Subscribe(eventName string, handler EventHandler) error
-
-	// Unsubscribe Unsubscribe
 	Unsubscribe(eventName string, handler EventHandler) error
 }
-
-// EventHandler Event Handler Interface
 type EventHandler interface {
-	// Handle Process event
 	Handle(event DomainEvent) error
-
-	// Name Return handler name for identification
 	Name() string
 }
-
-// EventPublishOptions Event Publish Options
 type EventPublishOptions struct {
-	// Retry Number of retries on failure
-	Retry int
-
-	// Timeout Publishing timeout
+	Retry   int
 	Timeout time.Duration
 }
-
-// EventSubscription Event Subscription
 type EventSubscription struct {
 	ID        string       `json:"id"`
 	EventName string       `json:"event_name"`
@@ -53,8 +31,6 @@ type EventSubscription struct {
 	CreatedAt time.Time    `json:"created_at"`
 	IsActive  bool         `json:"is_active"`
 }
-
-// EventPublishResult Event Publish Result
 type EventPublishResult struct {
 	EventName   string    `json:"event_name"`
 	Success     bool      `json:"success"`
@@ -62,7 +38,6 @@ type EventPublishResult struct {
 	PublishedAt time.Time `json:"published_at"`
 }
 
-// ValidateEvent Validate Domain Event
 func ValidateEvent(event DomainEvent) error {
 	if event == nil {
 		return fmt.Errorf("event cannot be nil")
@@ -85,7 +60,6 @@ func ValidateEvent(event DomainEvent) error {
 	return nil
 }
 
-// EventBus In-memory Event Bus Implementation
 type EventBus struct {
 	handlers  map[string][]EventHandler
 	mu        sync.RWMutex
@@ -93,15 +67,12 @@ type EventBus struct {
 	muHistory sync.Mutex
 }
 
-// NewEventBus Create New Event Bus
 func NewEventBus() *EventBus {
 	return &EventBus{
 		handlers: make(map[string][]EventHandler),
 		history:  make([]EventPublishResult, 0),
 	}
 }
-
-// Publish Publish Event (Synchronous Execution)
 func (bus *EventBus) Publish(event DomainEvent) error {
 	if err := ValidateEvent(event); err != nil {
 		return err
@@ -148,8 +119,6 @@ func (bus *EventBus) Publish(event DomainEvent) error {
 
 	return nil
 }
-
-// Subscribe Subscribe to Event
 func (bus *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	if eventName == "" {
 		return fmt.Errorf("event name cannot be empty")
@@ -171,8 +140,6 @@ func (bus *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	bus.handlers[eventName] = append(bus.handlers[eventName], handler)
 	return nil
 }
-
-// Unsubscribe Unsubscribe
 func (bus *EventBus) Unsubscribe(eventName string, handler EventHandler) error {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
@@ -191,8 +158,6 @@ func (bus *EventBus) Unsubscribe(eventName string, handler EventHandler) error {
 
 	return nil
 }
-
-// GetPublishHistory Get publish history (for debugging)
 func (bus *EventBus) GetPublishHistory() []EventPublishResult {
 	bus.muHistory.Lock()
 	defer bus.muHistory.Unlock()
@@ -202,13 +167,11 @@ func (bus *EventBus) GetPublishHistory() []EventPublishResult {
 	return history
 }
 
-// FuncHandler Functional Event Handler
 type FuncHandler struct {
 	name string
 	fn   func(DomainEvent) error
 }
 
-// NewFuncHandler Create Functional Handler
 func NewFuncHandler(name string, fn func(DomainEvent) error) *FuncHandler {
 	if name == "" {
 		name = fmt.Sprintf("func-handler-%d", time.Now().UnixNano())
@@ -218,24 +181,18 @@ func NewFuncHandler(name string, fn func(DomainEvent) error) *FuncHandler {
 		fn:   fn,
 	}
 }
-
-// Handle Process event
 func (h *FuncHandler) Handle(event DomainEvent) error {
 	return h.fn(event)
 }
-
-// Name Return handler name
 func (h *FuncHandler) Name() string {
 	return h.name
 }
 
-// MockEventPublisher Mock Event Publisher
 type MockEventPublisher struct {
 	handlers map[string][]EventHandler
 	mu       sync.RWMutex
 }
 
-// NewMockEventPublisher Create Mock Event Publisher
 func NewMockEventPublisher() *MockEventPublisher {
 	return &MockEventPublisher{
 		handlers: make(map[string][]EventHandler),
@@ -292,15 +249,11 @@ func (p *MockEventPublisher) Unsubscribe(eventName string, handler EventHandler)
 	return nil
 }
 
-// LoggingEventHandler Logging Event Handler Example
 type LoggingEventHandler struct{}
 
-// NewLoggingEventHandler Create Logging Event Handler
 func NewLoggingEventHandler() *LoggingEventHandler {
 	return &LoggingEventHandler{}
 }
-
-// Handle Process event (log)
 func (h *LoggingEventHandler) Handle(event DomainEvent) error {
 	fmt.Printf("[EVENT HANDLED] %s: aggregate=%s time=%s\n",
 		event.EventName(),
@@ -308,8 +261,6 @@ func (h *LoggingEventHandler) Handle(event DomainEvent) error {
 		event.OccurredOn().Format(time.RFC3339))
 	return nil
 }
-
-// Name Return handler name
 func (h *LoggingEventHandler) Name() string {
 	return "logging-event-handler"
 }

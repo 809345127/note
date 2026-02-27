@@ -10,36 +10,31 @@ import (
 	"ddd/domain/user"
 )
 
-// ApplicationService User application service - coordinates user-related business processes
 type ApplicationService struct {
 	userRepo          user.Repository
 	orderRepo         order.Repository
 	userDomainService *user.DomainService
-	uow               shared.UnitOfWork
+	uowFactory        shared.UnitOfWorkFactory
 }
 
-// NewApplicationService Create user application service
 func NewApplicationService(
 	userRepo user.Repository,
 	orderRepo order.Repository,
-	uow shared.UnitOfWork,
+	uowFactory shared.UnitOfWorkFactory,
 ) *ApplicationService {
 	return &ApplicationService{
 		userRepo:          userRepo,
 		orderRepo:         orderRepo,
 		userDomainService: user.NewDomainService(userRepo),
-		uow:               uow,
+		uowFactory:        uowFactory,
 	}
 }
 
-// CreateUserRequest Create user request DTO
 type CreateUserRequest struct {
 	Name  string `json:"name" binding:"required"`
 	Email string `json:"email" binding:"required,email"`
 	Age   int    `json:"age" binding:"required,min=0,max=150"`
 }
-
-// UserResponse User response DTO
 type UserResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -50,29 +45,20 @@ type UserResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// CreateUser Create user
-// DDD principle: Application service orchestrates business processes
-// UoW manages transaction and collects events from aggregates (Outbox pattern)
-// Email uniqueness is enforced by database unique constraint, not by application check
 func (s *ApplicationService) CreateUser(ctx context.Context, req CreateUserRequest) (*UserResponse, error) {
 	var u *user.User
+	uow := s.uowFactory.New()
 
-	err := s.uow.Execute(ctx, func(ctx context.Context) error {
-		// Create user entity (aggregate root records domain events upon creation)
+	err := uow.Execute(ctx, func(ctx context.Context) error {
 		var err error
 		u, err = user.NewUser(req.Name, req.Email, req.Age)
 		if err != nil {
 			return err
 		}
-
-		// Save user (uses transaction from context)
-		// Database unique constraint will reject duplicate emails
 		if err := s.userRepo.Save(ctx, u); err != nil {
 			return err
 		}
-
-		// Register aggregate with UoW for event collection
-		s.uow.RegisterNew(u)
+		uow.RegisterNew(u)
 		return nil
 	})
 
@@ -82,8 +68,6 @@ func (s *ApplicationService) CreateUser(ctx context.Context, req CreateUserReque
 
 	return s.convertToResponse(u), nil
 }
-
-// GetUser Get user information
 func (s *ApplicationService) GetUser(ctx context.Context, userID string) (*UserResponse, error) {
 	u, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -93,15 +77,14 @@ func (s *ApplicationService) GetUser(ctx context.Context, userID string) (*UserR
 	return s.convertToResponse(u), nil
 }
 
-// UpdateUserStatusRequest Update user status request DTO
 type UpdateUserStatusRequest struct {
 	UserID string `json:"user_id" binding:"required"`
 	Active bool   `json:"active"`
 }
 
-// UpdateUserStatus Update user status
 func (s *ApplicationService) UpdateUserStatus(ctx context.Context, req UpdateUserStatusRequest) error {
-	return s.uow.Execute(ctx, func(ctx context.Context) error {
+	uow := s.uowFactory.New()
+	return uow.Execute(ctx, func(ctx context.Context) error {
 		u, err := s.userRepo.FindByID(ctx, req.UserID)
 		if err != nil {
 			return err
@@ -117,25 +100,20 @@ func (s *ApplicationService) UpdateUserStatus(ctx context.Context, req UpdateUse
 			return err
 		}
 
-		s.uow.RegisterDirty(u)
+		uow.RegisterDirty(u)
 		return nil
 	})
 }
 
-// GetUserTotalSpentRequest Get user total spent request DTO
 type GetUserTotalSpentRequest struct {
 	UserID string `json:"user_id" binding:"required"`
 }
-
-// GetUserTotalSpentResponse Get user total spent response DTO
 type GetUserTotalSpentResponse struct {
 	UserID      string `json:"user_id"`
 	TotalAmount int64  `json:"total_amount"`
 	Currency    string `json:"currency"`
 }
 
-// GetUserTotalSpent Get user total spent amount
-// Note: This is a cross-subdomain query, handled at application layer
 func (s *ApplicationService) GetUserTotalSpent(ctx context.Context, req GetUserTotalSpentRequest) (*GetUserTotalSpentResponse, error) {
 	orders, err := s.orderRepo.FindDeliveredOrdersByUserID(ctx, req.UserID)
 	if err != nil {
@@ -144,7 +122,6 @@ func (s *ApplicationService) GetUserTotalSpent(ctx context.Context, req GetUserT
 
 	total := shared.NewMoney(0, "CNY")
 	for _, o := range orders {
-		// Validate currency consistency
 		if o.TotalAmount().Currency() != total.Currency() {
 			return nil, fmt.Errorf("mixed currencies not supported: %s vs %s", o.TotalAmount().Currency(), total.Currency())
 		}
@@ -161,8 +138,6 @@ func (s *ApplicationService) GetUserTotalSpent(ctx context.Context, req GetUserT
 		Currency:    total.Currency(),
 	}, nil
 }
-
-// convertToResponse Convert user entity to response DTO
 func (s *ApplicationService) convertToResponse(u *user.User) *UserResponse {
 	return &UserResponse{
 		ID:        u.ID(),
@@ -174,8 +149,6 @@ func (s *ApplicationService) convertToResponse(u *user.User) *UserResponse {
 		UpdatedAt: u.UpdatedAt(),
 	}
 }
-
-// CanUserPlaceOrder Check if user can place order (delegated to domain service)
 func (s *ApplicationService) CanUserPlaceOrder(ctx context.Context, userID string) (bool, error) {
 	return s.userDomainService.CanUserPlaceOrder(ctx, userID)
 }
